@@ -138,8 +138,6 @@ fn compute_cell_boundary(p1: Vector, p2: Vector, q: Vector, eps: f64 ) -> OptLin
 type Curve = Vec<Vector>;
 
 
-
-
 /// Compute the free-space diagram between curve P (points ps) and curve Q (points qs).
 /// Placing P point indices on the horizontal axis and Q on the vertical axis.
 fn compute_fsd(ps: Curve, qs: Curve, eps: f64) -> FSD {
@@ -182,7 +180,6 @@ fn compute_fsd(ps: Curve, qs: Curve, eps: f64) -> FSD {
         }
         horizontals.push(row);
     }
-
 
     FSD {
         n, m, 
@@ -252,10 +249,101 @@ fn partial_curve_matching(c1: Curve, c2: Curve, eps: f64) -> bool {
     rsd.verticals[rsd.n-1].iter().any(|b| b.is_some())
 }
 
+/// Given a reachability space diagram, print the steps to walk along P and Q.
+fn partial_curve_matching_path(rsd: FSD) -> Vec<(f64, f64)> {
+    let mut steps = vec![];
+    let mut i = rsd.n - 1;
+    let mut i_off = 0.;
+    let mut j = 0;
+    let mut j_off = 0.;
+    let mut found = false;
+
+    // Seek lowest non-empty boundary on right side of the RSD.
+    for (_j, lb) in rsd.verticals[rsd.n-1].iter().enumerate() {
+        if let Some(LineBoundary { a, b }) = lb {
+            j = _j;
+            j_off = *a;
+            found = true;
+            break;
+        }
+    }
+    if !found { return vec![]; }
+
+    steps.push((i as f64 + i_off, j as f64 + j_off));
+
+    // Walk backwards.
+    while !(i == 0 && i_off == 0.) {
+
+        assert!(i_off == 0. || j_off == 0.);
+
+        if j == 0 && j_off == 0. { // On lower line, move left
+            assert!(i_off == 0.); // Expect to have walked to start of node.
+            i -= 1;
+        }
+        else if i_off == 0. && j_off == 0. { // At corner point.
+            let left = rsd.verticals[i-1][j-1];
+            let below = rsd.horizontals[j-1][i-1];
+            if let Some(LineBoundary { a, b }) = left { 
+                if a == 0. { // Walk to lower-left corner point.
+                    i -= 1;
+                    j -= 1;
+                } else { // Walk to vertical boundary to the left.
+                    i -= 1;
+                    j -= 1;
+                    j_off = a;
+                }
+            } else if let Some(LineBoundary { a, b }) = below {
+                assert!(a > 0.); // If it is zero we should have reached the previous if-statement.
+                i -= 1;
+                j -= 1;
+                i_off = a;
+            }
+            else {
+                panic!("Cannot walk either left or down from reachable corner point.");
+            }
+        } else if i_off > 0. { // On horizontal boundary line.
+            // prefer to walk to left vertical boundary.
+            let left = rsd.verticals[i][j-1]; 
+            let below = rsd.horizontals[j-1][i]; 
+            if let Some(LineBoundary { a, b }) = left {
+                j -= 1;
+                j_off = a;
+                i_off = 0.;
+            } else if let Some(LineBoundary { a, b }) = below {
+                j -= 1;
+                j_off = 0.;
+                i_off = a;
+            } else {
+                panic!("Cannot walk either left or down from horizontal boundary line.");
+            }
+        } else if j_off > 0. { // On vertical boundary line.
+            // prefer to walk down.
+            let left = rsd.verticals[i-1][j]; 
+            let below = rsd.horizontals[j][i-1]; 
+            if let Some(LineBoundary { a, b }) = below {
+                i -= 1;
+                j_off = 0.;
+                i_off = a;
+            } else if let Some(LineBoundary { a, b }) = left {
+                i -= 1;
+                j_off = a;
+                i_off = 0.;
+            } else {
+                panic!("Cannot walk either left or down from vertical boundary line.");
+            }
+        }
+        
+        steps.push((i as f64 + i_off, j as f64 + j_off));
+    }
+
+    steps.reverse();
+    steps
+}
+
 /// Construct curve with n number of random points in f64 domain.
-fn random_curve(n: usize) -> Curve {
+fn random_curve(n: usize, fieldsize: f64) -> Curve {
     let mut rng = rand::thread_rng();
-    let c: Curve = (0..n).into_iter().map(|_| Vector {x: rng.gen_range(0.0..1000.), y: rng.gen_range(0.0..1000.)}).collect();
+    let c: Curve = (0..n).into_iter().map(|_| Vector {x: rng.gen_range(0.0..fieldsize), y: rng.gen_range(0.0..fieldsize)}).collect();
     // Chance of generating curve with zero-length edges is too small to actually counter..
     for i in 0..c.len()-1 {
         assert!((c[i+1] - c[i]).dot(c[i+1] - c[i]) > EPS * EPS);
@@ -272,17 +360,22 @@ fn translate_curve(c1: Curve, q: Vector) -> Curve {
 /// Add some random noise to curve points.
 fn perturb_curve(c: Curve, deviation: f64) -> Curve {
     let mut rng = rand::thread_rng();
-    let d = 1./2.0_f64.sqrt() * deviation * deviation;
+    let d = (1./2.0_f64.sqrt()) * deviation * deviation;
     c.into_iter().map(|p| p + d * rng.gen::<f64>() * Vector {x: 1., y: 1.} ).collect()
 }
 
 
 fn main() {
 
-    let c1 = random_curve(20);
+    let c1 = random_curve(20, 2.);
     // let c2 = translate_curve(c1, Vector{ x: 3. , y: 1. });
     let c2 = perturb_curve(c1.clone(), 1.);
 
-    let partial = partial_curve_matching(c1, c2, 1.);
+    let partial = partial_curve_matching(c1.clone(), c2.clone(), 1.);
     println!("{partial:?}");
+
+    let fsd = compute_fsd(c1, c2, 1.);
+    let rsd = compute_rsd(fsd);
+    let steps = partial_curve_matching_path(rsd);
+    println!("{steps:?}");
 }
