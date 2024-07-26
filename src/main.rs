@@ -1,9 +1,38 @@
-use std::{iter::zip, ops::{Add, Mul, Sub}, vec};
+/// Author: jvtubergen
+/// * This code has copied pyfrechet for computing the FSD.
+/// The choice to switch to Rust is an arbitrary personal choice:
+/// * Building rust code is fun.
+/// * Practice with linking Rust code to Python (thus building python packages using rust code).
+/// * Potentially upgrading to parallel implementation.
+/// 
+/// Use of code repo:
+/// This code solves the PCMP (Partial Curve Matching Problem).
+/// PCMP: Given a curve P, a curve Q and a distance threshold epsilon, is there some subcurve Q' of Q in such that the Fréchet distance between P and Q' is below epsilon? 
+/// We limit ourselves to curves P and Q that are polygonal chains, and use the continuous strong Fréchet distance as a (sub)curve similarity/distance measure.
+/// 
+/// 
+/// 
+/// Design choices:
+/// We assume the partial curve to be P, and the curve to find some subcurve to be in Q.
+/// In the FSD (Free-Space Diagram) we place P on the horizontal axis and Q on the vertical axis.
+/// Thus, since any subcurve of Q suffices, we may start at any vertical position on the left side of the FSD and end at any vertical position on the right side of the FSD.
+/// The path still has to be monotonic though (since its the strong Fréchet distance)
+/// 
+/// Assumptions:
+/// Assert all edges are non-zero length (thus no subsequent duplicated vertices).
+/// 
+use std::{error::Error, fs, io::Read, iter::zip, ops::{Add, Mul, Sub}, path::Path, vec};
 extern crate rand;
 use rand::Rng;
 
+// use serde::{Serialize, Deserialize};
+use serde_derive::{Serialize, Deserialize};
+use std::fs::File;
+use std::io::Write;
+use bincode;
 
-#[derive(Debug, Clone, Copy)]
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 struct Vector {
     x: f64,
     y: f64
@@ -209,9 +238,38 @@ fn intersect(opt_b1: OptLineBoundary, opt_b2: OptLineBoundary) -> OptLineBoundar
 fn compute_rsd(fsd: FSD) -> FSD {
     let mut rsd = FSD::new(fsd.n, fsd.m);
     
-    // Copy over the left and lower boundary of the FSD to the RSD.
-    rsd.verticals[0] = fsd.verticals[0].clone();
-    rsd.horizontals[0] = fsd.horizontals[0].clone();
+    // Walk horizontally and vertically till a partially empty boundary occurs.
+    let mut i = 0;
+    while i <= fsd.n - 1 {
+        let element = &fsd.horizontals[0][i];
+        if element.is_none() {
+            break;
+        }
+        let LineBoundary { a, b } = element.unwrap();
+        if a == 0. {
+            rsd.horizontals[0][i] = Some(LineBoundary { a, b });
+        } 
+        if b < 1. {
+            break;
+        }
+        i += 1;
+    }
+    
+    let mut j = 0;
+    while j <= fsd.m - 1 {
+        let element = &fsd.verticals[0][j];
+        if element.is_none() {
+            break;
+        }
+        let LineBoundary { a, b } = element.unwrap();
+        if a == 0. {
+            rsd.verticals[0][j] = Some(LineBoundary { a, b });
+        } 
+        if b < 1. {
+            break;
+        }
+        j += 1;
+    }
 
     for i in 0..rsd.n-1 {
         for j in 0..rsd.m-1 {
@@ -364,18 +422,47 @@ fn perturb_curve(c: Curve, deviation: f64) -> Curve {
     c.into_iter().map(|p| p + d * rng.gen::<f64>() * Vector {x: 1., y: 1.} ).collect()
 }
 
+#[derive(Serialize, Deserialize)]
+struct State {
+    c1: Curve,
+    c2: Curve
+}
 
-fn main() {
+const DISCOVER: bool = true;
+const RUN_COUNT: usize = 10;
 
-    let c1 = random_curve(20, 2.);
-    // let c2 = translate_curve(c1, Vector{ x: 3. , y: 1. });
-    let c2 = perturb_curve(c1.clone(), 1.);
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+
+    let cases = 
+    if DISCOVER {
+        (0..RUN_COUNT).map(|_| {
+            let c1 = random_curve(20, 2.);
+            // let c2 = translate_curve(c1, Vector{ x: 3. , y: 1. });
+            let c2 = perturb_curve(c1.clone(), 1.);
+            State { c1, c2 }
+        }).collect()
+    } 
+    else {
+        let mut r = read_cases()?;
+        r.truncate(RUN_COUNT);
+        r
+    };
+
+    for case in cases {
+        run_test(case.c1, case.c2)?;
+    }
+
+    Ok(())
+}
+
+fn run_test(c1: Curve, c2: Curve) -> Result<(), Box<dyn std::error::Error>> {
 
     let partial = partial_curve_matching(c1.clone(), c2.clone(), 1.);
     println!("{partial:?}");
 
-    let fsd = compute_fsd(c1, c2, 1.);
+    let fsd = compute_fsd(c1.clone(), c2.clone(), 1.);
     let rsd = compute_rsd(fsd);
+
     if let Ok(opt_steps) = partial_curve_matching_path(rsd) {
         if let Some(steps) = opt_steps {
             for step in steps {
@@ -383,4 +470,53 @@ fn main() {
             }
         }
     } 
+    else if DISCOVER {
+        // Write to system.
+        let state = State { c1, c2 };
+        let bin = bincode::serialize(&state)?;
+        // File::create(path)
+        fs::create_dir("testdata");
+        let files = list_files_in_subfolder("testdata")?;
+        let n = files.len();
+        let file_path = Path::new("testdata").join(format!("case_{n}.bin"));
+        let mut file = File::create(file_path)?;
+        file.write_all(&bin)?;
+    } else {
+        println!("No success for testcase.");
+    }
+
+    Ok(())
+}
+
+
+fn read_cases() -> Result<Vec<State>, Box<dyn std::error::Error>> {
+    let files = list_files_in_subfolder("testdata")?;
+    let mut result = vec![];
+    for file in files {
+        let mut file = File::open(file)?;
+        let mut buffer = Vec::new();
+        file.read_to_end(&mut buffer);
+        let state = bincode::deserialize(&buffer)?;
+        result.push(state);
+    }
+
+    Ok(result)
+}
+
+
+fn list_files_in_subfolder<P: AsRef<Path>>(path: P) -> std::io::Result<Vec<String>> {
+    let mut files = Vec::new();
+
+    for entry in fs::read_dir(path)? {
+        let entry = entry?;
+        let path = entry.path();
+
+        if path.is_file() {
+            if let Some(path_str) = path.to_str() {
+                files.push(path_str.to_string());
+            }
+        }
+    }
+
+    Ok(files)
 }
