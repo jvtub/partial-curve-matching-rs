@@ -21,11 +21,10 @@
 /// Assumptions:
 /// Assert all edges are non-zero length (thus no subsequent duplicated vertices).
 /// 
-use std::{error::Error, fs, io::Read, iter::zip, ops::{Add, Mul, Sub}, path::Path, vec};
+use std::{fs, io::Read, iter::zip, ops::{Add, Mul, Sub}, path::Path, vec};
 extern crate rand;
 use rand::Rng;
 
-// use serde::{Serialize, Deserialize};
 use serde_derive::{Serialize, Deserialize};
 use std::fs::File;
 use std::io::Write;
@@ -40,6 +39,9 @@ struct Vector {
 impl Vector {
     fn dot(self, rhs: Self) -> f64 {
         self.x * rhs.x + self.y * rhs.y
+    }
+    fn distance(self, rhs: Self) -> f64 {
+        (rhs - self).dot(rhs - self).sqrt()
     }
 }
 impl Mul for Vector {
@@ -422,13 +424,24 @@ fn perturb_curve(c: Curve, deviation: f64) -> Curve {
     c.into_iter().map(|p| p + d * rng.gen::<f64>() * Vector {x: 1., y: 1.} ).collect()
 }
 
-#[derive(Serialize, Deserialize)]
-struct State {
-    c1: Curve,
-    c2: Curve
+/// Compute curve length.
+fn curve_length(c: &Curve) -> f64 {
+    let mut length = 0.;
+    for (p1, p2) in zip(c, &c[1..]) {
+        length += p1.distance(*p2);
+    }
+    length
 }
 
-const DISCOVER: bool = true;
+
+#[derive(Serialize, Deserialize, Clone)]
+struct State {
+    c1: Curve,
+    c2: Curve,
+    eps: f64
+}
+
+const DISCOVER: bool = false;
 const RUN_COUNT: usize = 10;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -439,7 +452,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let c1 = random_curve(20, 2.);
             // let c2 = translate_curve(c1, Vector{ x: 3. , y: 1. });
             let c2 = perturb_curve(c1.clone(), 1.);
-            State { c1, c2 }
+            State { c1, c2, eps: 1. }
         }).collect()
     } 
     else {
@@ -448,43 +461,85 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         r
     };
 
-    for case in cases {
-        run_test(case.c1, case.c2)?;
+    for (i, case) in cases.into_iter().enumerate() {
+        let res_test = run_test(case.clone());
+        if res_test.is_err() {
+            // Print we got an error.
+            println!("Test case {} failed. Error message:", i);
+            println!("{:?}", res_test.unwrap_err());
+            // Only write new tast case in disovery mode, 
+            //   otherwise we are duplicating testcases 
+            //   (writing new case we just read).
+            if DISCOVER { 
+                write_new_testcase(case);
+            }
+        }
     }
 
     Ok(())
 }
 
-fn run_test(c1: Curve, c2: Curve) -> Result<(), Box<dyn std::error::Error>> {
+/// Check steps result is within distance.
+fn check_steps(c1: Curve, c2: Curve, steps: Vec<(f64, f64)>, eps: f64) -> bool {
+    // Check distance while walking is within threshold.
+    for (_i, _j) in steps {
+        let i = _i.floor();
+        let i_off = _i - i;
+        let j = _j.floor();
+        let j_off = _j - j;
+        
+        let p = if i_off == 0. { 
+            c1[i as usize] 
+        } else { (1. - i_off) * c1[i as usize] + i_off * c1[i as usize + 1] };
 
-    let partial = partial_curve_matching(c1.clone(), c2.clone(), 1.);
+        let q = if j_off == 0. { 
+            c2[j as usize] 
+        } else { (1. - j_off) * c2[j as usize] + j_off * c2[j as usize + 1] };
+
+        if !(p.distance(q) < eps) {
+             return false;
+        }
+    }
+    true
+}
+
+/// Test validity of running a state.
+fn run_test(state: State) -> Result<(), Box<dyn std::error::Error>> {
+    let State { c1, c2, eps } = state.clone();
+
+    let partial = partial_curve_matching(c1.clone(), c2.clone(), eps);
     println!("{partial:?}");
 
-    let fsd = compute_fsd(c1.clone(), c2.clone(), 1.);
-    let rsd = compute_rsd(fsd);
+    if partial { // Found some partial curve, compute steps to attain this.
+        let fsd = compute_fsd(c1.clone(), c2.clone(), 1.);
+        let rsd = compute_rsd(fsd);
 
-    if let Ok(opt_steps) = partial_curve_matching_path(rsd) {
-        if let Some(steps) = opt_steps {
-            for step in steps {
-                println!("{:?}, {:?}", step.0, step.1);
-            }
+        let res_opt_steps = partial_curve_matching_path(rsd);
+        if res_opt_steps.is_err() {
+            return Err("We expect no error, and we do expect to find a solution.".into());
+        } 
+        let opt_steps = res_opt_steps.unwrap();
+        if opt_steps.is_none() {
+            return Err("We expect no error, and we do expect to find a solution.".into());
         }
-    } 
-    else if DISCOVER {
-        // Write to system.
-        let state = State { c1, c2 };
-        let bin = bincode::serialize(&state)?;
-        // File::create(path)
-        fs::create_dir("testdata");
-        let files = list_files_in_subfolder("testdata")?;
-        let n = files.len();
-        let file_path = Path::new("testdata").join(format!("case_{n}.bin"));
-        let mut file = File::create(file_path)?;
-        file.write_all(&bin)?;
-    } else {
-        println!("No success for testcase.");
+        let steps = opt_steps.unwrap();
+        if !check_steps(c1, c2, steps, eps) {
+            return Err("When reconstructing the path steps, the threshold is exceeded.".into());
+        }
     }
 
+    Ok(())
+}
+
+/// Write state to testdata folder as a new testcase to debug.
+fn write_new_testcase(state: State) -> Result<(), Box<dyn std::error::Error>> {
+    let bin = bincode::serialize(&state)?;
+    fs::create_dir("testdata"); // Folder probably already exists, then will throw error.
+    let files = list_files_in_subfolder("testdata")?;
+    let n = files.len();
+    let file_path = Path::new("testdata").join(format!("case_{n}.bin"));
+    let mut file = File::create(file_path)?;
+    file.write_all(&bin)?;
     Ok(())
 }
 
