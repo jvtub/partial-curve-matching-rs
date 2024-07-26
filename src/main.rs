@@ -1,3 +1,4 @@
+#![feature(let_chains)]
 /// Author: jvtubergen
 /// * This code has copied pyfrechet for computing the FSD.
 /// The choice to switch to Rust is an arbitrary personal choice:
@@ -23,6 +24,7 @@
 /// 
 use std::{fs, io::Read, iter::zip, ops::{Add, Mul, Sub}, path::Path, vec};
 extern crate rand;
+use full_palette::{GREEN_400, RED_300};
 use rand::Rng;
 
 use serde_derive::{Serialize, Deserialize};
@@ -30,6 +32,7 @@ use std::fs::File;
 use std::io::Write;
 use bincode;
 
+use plotters::prelude::*;
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 struct Vector {
@@ -574,4 +577,136 @@ fn list_files_in_subfolder<P: AsRef<Path>>(path: P) -> std::io::Result<Vec<Strin
     }
 
     Ok(files)
+}
+/// Drawing Free-Space Diagram.
+fn draw_fsd(fsd: FSD, filename: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let margin = 20; // 20 pixels margin
+    let width = fsd.n * 20 + 2 * margin;
+    let height = fsd.m * 20 + 2 * margin;
+    let filename = format!("{}.png", filename);
+    let drawing_area = BitMapBackend::new(&filename, (width as u32, height as u32)).into_drawing_area();
+    drawing_area.fill(&WHITE)?;
+
+    let drawing_area = drawing_area.margin(20, 20, 20, 20);
+
+    let n = fsd.n;
+    let m = fsd.m;
+
+    // let mut chart_builder = ChartBuilder::on(&drawing_area);
+    // chart_builder.margin(20);
+    // let mut chart_context = chart_builder.build_cartesian_2d(0.0..fsd.n as f64, 0.0..fsd.m as f64).unwrap();
+
+
+    // Rectangle::new(points, style)
+    // let mut chart = ChartBuilder::on(&root)
+    //     .margin(20)
+    //     .build_cartesian_2d(0..fsd.n, 0..fsd.m)
+    //     .unwrap();
+
+    // chart.draw_series(
+    //     LineSeries::new((0..100).map(|x| (x, 100 - x)), &BLACK),
+    // ).unwrap();
+
+    let unreachable = ShapeStyle {
+        color: RED_300.mix(0.6),
+        filled: true,
+        stroke_width: 1,
+    };
+    let reachable = ShapeStyle {
+        color: GREEN_400.mix(0.6),
+        filled: true,
+        stroke_width: 1,
+    };
+
+    let mut reachable_coords = vec![];
+    let mut unreachable_coords = vec![];
+
+    // Reachable corner points.
+    for i in 0..n {
+        for j in 0..m-2 {
+            let coord = (20*i as i32, 20*j as i32);
+            if let Some(LineBoundary { a, b }) = fsd.verticals[i][j] && a == 0. {
+                reachable_coords.push(coord);
+            } else {
+                unreachable_coords.push(coord);
+            }
+        }
+        let j = m - 2;
+        let coord = (20*i as i32, 20*j as i32);
+        if let Some(LineBoundary { a, b }) = fsd.verticals[i][j] && a == 0. {
+            reachable_coords.push(coord);
+        } else {
+            unreachable_coords.push(coord);
+        }
+        let coord = (20*i as i32, 20*(j+1) as i32);
+        if let Some(LineBoundary { a, b }) = fsd.verticals[i][j] && b == 1. {
+            reachable_coords.push(coord);
+        } else {
+            unreachable_coords.push(coord);
+        }
+    }
+
+
+    let mut reachable_segments = vec![];
+    let mut unreachable_segments = vec![];
+    
+    // Horizontal.
+    for j in 0..m {
+        for i in 0..n-1 {
+            if let Some(LineBoundary { a, b }) = fsd.horizontals[j][i] {
+                let i = i as f64;
+                let j = j as f64;
+                reachable_segments.push(vec![(i+a,j), (i+b, j)]);
+                if a > 0. {
+                    unreachable_segments.push(vec![(i,j), (i+a, j)]);
+                } if b < 1. {
+                    unreachable_segments.push(vec![(i+b,j), (i+1., j)]);
+                }
+            } else {
+                let i = i as f64;
+                let j = j as f64;
+                reachable_segments.push(vec![(i,j), (i+1., j)]);
+            }
+        }
+    }
+
+    // Vertical.
+    for i in 0..n {
+        for j in 0..m-1 {
+            if let Some(LineBoundary { a, b }) = fsd.verticals[i][j] {
+                let i = i as f64;
+                let j = j as f64;
+                reachable_segments.push(vec![(i,j+a), (i, j+b)]);
+                if a > 0. {
+                    unreachable_segments.push(vec![(i,j), (i, j+a)]);
+                } if b < 1. {
+                    unreachable_segments.push(vec![(i,j+b), (i, j+1.)]);
+                }
+            } else {
+                let i = i as f64;
+                let j = j as f64;
+                reachable_segments.push(vec![(i,j), (i, j+1.)]);
+            }
+        }
+    }
+
+    // Draw reachable and unreachable line segments.
+    for seg in reachable_segments {
+        let seg: Vec<(i32, i32)> = seg.into_iter().map(|(x,y)| ((20.*x) as i32, (20.*y) as i32)).collect();
+        drawing_area.draw(&Polygon::new(seg, reachable))?;
+    }
+    for seg in unreachable_segments {
+        let seg: Vec<(i32, i32)> = seg.into_iter().map(|(x,y)| ((20.*x) as i32, (20.*y) as i32)).collect();
+        drawing_area.draw(&Polygon::new(seg, unreachable))?;
+    }
+
+    // Draw reachable and unreachable cornerpoints.
+    for coord in reachable_coords {
+        drawing_area.draw(&Circle::new(coord, 1, reachable))?;
+    }
+    for coord in unreachable_coords {
+        drawing_area.draw(&Circle::new(coord, 1, unreachable))?;
+    }
+
+    Ok(())
 }
