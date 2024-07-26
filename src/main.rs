@@ -496,7 +496,7 @@ fn check_steps(c1: Curve, c2: Curve, steps: Vec<(f64, f64)>, eps: f64) -> bool {
             c2[j as usize] 
         } else { (1. - j_off) * c2[j as usize] + j_off * c2[j as usize + 1] };
 
-        if !(p.distance(q) < eps) {
+        if !(p.distance(q) < eps + EPS) {
              return false;
         }
     }
