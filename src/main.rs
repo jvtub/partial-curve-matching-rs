@@ -249,8 +249,8 @@ fn partial_curve_matching(c1: Curve, c2: Curve, eps: f64) -> bool {
     rsd.verticals[rsd.n-1].iter().any(|b| b.is_some())
 }
 
-/// Given a reachability space diagram, print the steps to walk along P and Q.
-fn partial_curve_matching_path(rsd: FSD) -> Vec<(f64, f64)> {
+/// Given a reachability space diagram, find steps to walk along P and Q.
+fn partial_curve_matching_path(rsd: FSD) -> Result<Option<Vec<(f64, f64)>>, &'static str> {
     let mut steps = vec![];
     let mut i = rsd.n - 1;
     let mut i_off = 0.;
@@ -267,69 +267,69 @@ fn partial_curve_matching_path(rsd: FSD) -> Vec<(f64, f64)> {
             break;
         }
     }
-    if !found { return vec![]; }
+    if !found { return Ok(None) }
 
     steps.push((i as f64 + i_off, j as f64 + j_off));
 
     // Walk backwards.
     while !(i == 0 && i_off == 0.) {
+        let _v = (i as f64 + i_off, j as f64 + j_off);
+        let _w = (i_off == 0., j_off == 0.);
+        // println!("walk: {i}, {i_off}, {j}, {j_off}");
+        // println!("walk: {_v:?}, {_w:?}");
 
-        assert!(i_off == 0. || j_off == 0.);
+        // Vertical/Horizontal/Corner.
+        if !(i_off == 0. || j_off == 0.) { return Err("Not at any RSD boundary.") }
 
-        if j == 0 && j_off == 0. { // On lower line, move left
-            assert!(i_off == 0.); // Expect to have walked to start of node.
+        if j == 0 && j_off == 0. { // At bottom of RSD, walk left.
+
+            // Expect to have walked to start of node.
+            if !(i_off == 0.) { return Err("At bottom of RSD but not at a cornerpoint.") }
+            if !(i > 0) { return Err("Negative i.") }
             i -= 1;
         }
-        else if i_off == 0. && j_off == 0. { // At corner point.
-            let left = rsd.verticals[i-1][j-1];
-            let below = rsd.horizontals[j-1][i-1];
-            if let Some(LineBoundary { a, b }) = left { 
-                if a == 0. { // Walk to lower-left corner point.
-                    i -= 1;
-                    j -= 1;
-                } else { // Walk to vertical boundary to the left.
-                    i -= 1;
-                    j -= 1;
-                    j_off = a;
-                }
-            } else if let Some(LineBoundary { a, b }) = below {
-                assert!(a > 0.); // If it is zero we should have reached the previous if-statement.
+        else {
+
+            if i_off > 0. { // At horizontal boundary line.
+                if !(j > 0) { return Err("Negative j.") }
+                j -= 1;
+            } 
+            else if j_off > 0. { // At vertical boundary line.
+                if !(i > 0) { return Err("Negative i.") }
+                i -= 1;
+            }
+            else { // At corner point. 
+                if !(i > 0) { return Err("Negative i.") }
+                if !(j > 0) { return Err("Negative j.") }
                 i -= 1;
                 j -= 1;
-                i_off = a;
+            }
+
+            let left = rsd.verticals[i][j];
+            let below = rsd.horizontals[j][i];
+
+            let (first, second) = 
+                if j_off > 0. || j_off == i_off { (below, left) } else { (left, below) };
+
+            if let Some(LineBoundary { a, b }) = first {  
+                if j_off > 0. || j_off == i_off { // Check horizontal first
+                    j_off = 0.;
+                    i_off = a;
+                } else { // Check vertical first
+                    j_off = a;
+                    i_off = 0.;
+                }
+            } else if let Some(LineBoundary { a, b }) = second {  
+                if j_off > 0. || j_off == i_off { // Check vertical second
+                    i_off = 0.;
+                    j_off = a;
+                } else { // Check horizontal second
+                    i_off = a;
+                    j_off = 0.;
+                }
             }
             else {
-                panic!("Cannot walk either left or down from reachable corner point.");
-            }
-        } else if i_off > 0. { // On horizontal boundary line.
-            // prefer to walk to left vertical boundary.
-            let left = rsd.verticals[i][j-1]; 
-            let below = rsd.horizontals[j-1][i]; 
-            if let Some(LineBoundary { a, b }) = left {
-                j -= 1;
-                j_off = a;
-                i_off = 0.;
-            } else if let Some(LineBoundary { a, b }) = below {
-                j -= 1;
-                j_off = 0.;
-                i_off = a;
-            } else {
-                panic!("Cannot walk either left or down from horizontal boundary line.");
-            }
-        } else if j_off > 0. { // On vertical boundary line.
-            // prefer to walk down.
-            let left = rsd.verticals[i-1][j]; 
-            let below = rsd.horizontals[j][i-1]; 
-            if let Some(LineBoundary { a, b }) = below {
-                i -= 1;
-                j_off = 0.;
-                i_off = a;
-            } else if let Some(LineBoundary { a, b }) = left {
-                i -= 1;
-                j_off = a;
-                i_off = 0.;
-            } else {
-                panic!("Cannot walk either left or down from vertical boundary line.");
+                return Err("Expect to walk either left or down.")
             }
         }
         
@@ -337,7 +337,7 @@ fn partial_curve_matching_path(rsd: FSD) -> Vec<(f64, f64)> {
     }
 
     steps.reverse();
-    steps
+    Ok(Some(steps))
 }
 
 /// Construct curve with n number of random points in f64 domain.
@@ -376,6 +376,11 @@ fn main() {
 
     let fsd = compute_fsd(c1, c2, 1.);
     let rsd = compute_rsd(fsd);
-    let steps = partial_curve_matching_path(rsd);
-    println!("{steps:?}");
+    if let Ok(opt_steps) = partial_curve_matching_path(rsd) {
+        if let Some(steps) = opt_steps {
+            for step in steps {
+                println!("{:?}, {:?}", step.0, step.1);
+            }
+        }
+    } 
 }
