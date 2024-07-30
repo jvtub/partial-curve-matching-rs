@@ -559,13 +559,14 @@ fn draw_fsd(fsd: &FSD, filename: &str) -> Result<(), Box<dyn std::error::Error>>
     }
 
     // Draw reachable and unreachable line segments.
+    let height = 20*m as i32;
     // println!("reachable:");
     for seg in reachable_segments {
         // println!("{seg:?}");
         let seg: Vec<(i32, i32)> = seg.into_iter().map(|(axis, x, y)| {
             // ((20.*x) as i32, (20.*y) as i32)
-            if axis == 0 { ((20.*x) as i32, (20.*y) as i32) }
-            else         { ((20.*y) as i32, (20.*x) as i32) }
+            if axis == 0 { ((20.*x) as i32, height - (20.*y) as i32) }
+            else         { ((20.*y) as i32, height - (20.*x) as i32) }
         }).collect();
         drawing_area.draw(&Polygon::new(seg, reachable))?;
     }
@@ -575,8 +576,8 @@ fn draw_fsd(fsd: &FSD, filename: &str) -> Result<(), Box<dyn std::error::Error>>
         // println!("{seg:?}");
         let seg: Vec<(i32, i32)> = seg.into_iter().map(|(axis, x, y)| {
             // ((20.*x) as i32, (20.*y) as i32)
-            if axis == 0 { ((20.*x) as i32, (20.*y) as i32) }
-            else         { ((20.*y) as i32, (20.*x) as i32) }
+            if axis == 0 { ((20.*x) as i32, height - (20.*y) as i32) }
+            else         { ((20.*y) as i32, height - (20.*x) as i32) }
         }).collect();
         drawing_area.draw(&Polygon::new(seg, unreachable))?;
     }
