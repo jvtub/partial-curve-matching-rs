@@ -335,19 +335,21 @@ fn compute_rsd(fsd: FSD) -> FSD {
                 let opt_para = if x > 0 { Some((axis  , x-1, y  )) } else { None }; // parallel.
                 let opt_orth = if x > 0 { Some((1-axis, y  , x-1)) } else { None }; // orthogonal.
                 if let Some(orth) = opt_orth {
-                    rsd.segs[curr] = fsd.segs[curr];
+                    if rsd.segs[orth].is_some() {
+                        rsd.segs[curr] = fsd.segs[curr];
+                    }
                 } else if let Some(para) = opt_para {
                     // Custom intersect.
-                    if let Some(LineBoundary { a: a_, b: b_ }) = fsd.segs[para] {
+                    if let Some(LineBoundary { a: a_, b: b_ }) = rsd.segs[para] {
                         if let Some(LineBoundary { a, b }) = fsd.segs[curr] {
                             rsd.segs[curr] = LineBoundary::new(a.max(a_), b);
                         }
                     }
                 } else if let Some(prev) = opt_prev { 
-                    if let Some(LineBoundary { a: a_, b: b_ }) = fsd.segs[prev] {
+                    if let Some(LineBoundary { a: a_, b: b_ }) = rsd.segs[prev] {
                         if let Some(LineBoundary { a, b }) = fsd.segs[curr] {
                             if b_ == 1. && a == 0. {
-                                rsd.segs[curr] = LineBoundary::new(a_, b);
+                                rsd.segs[curr] = LineBoundary::new(0., b);
                             }
                         }
                     }
