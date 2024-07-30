@@ -186,8 +186,7 @@ fn intersect(opt_b1: OptLineBoundary, opt_b2: OptLineBoundary) -> OptLineBoundar
         let a = b1.a.max(b2.a); 
         let b = b1.b.min(b2.b);
 
-        if a < b { Some(LineBoundary { a, b }) }
-        else { None }
+        LineBoundary::new(a, b)
     }
 }
 
@@ -202,8 +201,7 @@ fn union(opt_b1: OptLineBoundary, opt_b2: OptLineBoundary) -> OptLineBoundary {
         let a = b1.a.min(b2.a); 
         let b = b1.b.max(b2.b);
 
-        if a < b { Some(LineBoundary { a, b }) }
-        else { None }
+        LineBoundary::new(a, b)
     }
 }
 
@@ -338,18 +336,20 @@ fn compute_rsd(fsd: FSD) -> FSD {
                     if rsd.segs[orth].is_some() {
                         rsd.segs[curr] = fsd.segs[curr];
                     }
-                } else if let Some(para) = opt_para {
+                } 
+                if let Some(para) = opt_para {
                     // Custom intersect.
                     if let Some(LineBoundary { a: a_, b: b_ }) = rsd.segs[para] {
                         if let Some(LineBoundary { a, b }) = fsd.segs[curr] {
-                            rsd.segs[curr] = LineBoundary::new(a.max(a_), b);
+                            rsd.segs[curr] = union(rsd.segs[curr], LineBoundary::new(a.max(a_), b));
                         }
                     }
-                } else if let Some(prev) = opt_prev { 
+                } 
+                if let Some(prev) = opt_prev { 
                     if let Some(LineBoundary { a: a_, b: b_ }) = rsd.segs[prev] {
                         if let Some(LineBoundary { a, b }) = fsd.segs[curr] {
                             if b_ == 1. && a == 0. {
-                                rsd.segs[curr] = LineBoundary::new(0., b);
+                                rsd.segs[curr] = union(rsd.segs[curr], LineBoundary::new(0., b));
                             }
                         }
                     }
