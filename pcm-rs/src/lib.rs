@@ -365,23 +365,24 @@ fn rsd_pcm_steps(rsd: &FSD) -> Result<Option<Vec<(f64,f64)>>, String> {
 
 /// Returns any subcurve of qs (if it exists) with Fréchet distance to ps below threshold epsilon.
 #[pyfunction]
-fn partial_curve(ps: Curve, qs: Curve, eps: f64) -> Option<(f64, f64)> {
+fn partial_curve(ps: Curve, qs: Curve, eps: f64) -> Result<Option<(f64, f64)>, PyErr> {
     let fsd = FSD::new(ps, qs, eps);
     let rsd = compute_rsd(fsd);
-    let opt_steps = rsd_pcm_steps(&rsd).unwrap_or(None);
+    let opt_steps = rsd_pcm_steps(&rsd).map_err(|str| PyErr::new::<PyTypeError, _>(str))?;
     if opt_steps.is_none() { 
-        None 
+        Ok(None) 
     } else {
         let steps = opt_steps.unwrap();
         let start= steps[0].1;
         let end = steps.last().unwrap().1;
-        Some((start, end))
+        Ok(Some((start, end)))
     }
 }
 
 
 #[pymodule]
 fn partial_curve_matching(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add_class::<Vector>()?;
     m.add_function(wrap_pyfunction!(partial_curve, m)?)?;
     Ok(())
 }
