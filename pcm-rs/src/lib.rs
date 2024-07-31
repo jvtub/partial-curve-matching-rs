@@ -324,6 +324,7 @@ fn rsd_pcm_steps(rsd: &FSD) -> Result<Option<Vec<(f64,f64)>>, String> {
                     next = Some(prev);
                     x_off = 0.;
                     y_off = a_;
+                    y -= 1;
                 }
             }
         }
@@ -334,6 +335,7 @@ fn rsd_pcm_steps(rsd: &FSD) -> Result<Option<Vec<(f64,f64)>>, String> {
                     next = Some(orth);
                     x_off = a_;
                     y_off = 0.;
+                    x -= 1;
                 } 
             }
         }
@@ -344,6 +346,7 @@ fn rsd_pcm_steps(rsd: &FSD) -> Result<Option<Vec<(f64,f64)>>, String> {
                     next = Some(para);
                     x_off = 0.;
                     y_off = a_;
+                    x -= 1;
                 }
             }
         }
