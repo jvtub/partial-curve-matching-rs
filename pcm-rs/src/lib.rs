@@ -294,7 +294,7 @@ fn rsd_pcm_steps(rsd: &FSD) -> Result<Option<Vec<(f64,f64)>>, String> {
     steps.push((i as f64 + i_off, j as f64 + j_off));
 
     // Walk backwards. (Walk greedily, it should not matter).
-    while !(i == 0 && i_off == 0.) {
+    while !(i == 0 && i_off == 0.) { // Walk while we're not at the start position of P.
 
         let position = (i as f64 + i_off, j as f64 + j_off);
         println!("position: {position:?}");
