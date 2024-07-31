@@ -1,0 +1,12 @@
+[package]
+name = "pcm-rs"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "partial_curve_matching"
+crate-type = ["cdylib"]
+
+[dependencies]
+ndarray = "0.15.6"
+pyo3 = "0.22.2"
