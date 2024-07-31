@@ -1,9 +1,8 @@
 #![feature(let_chains)]
-use std::{iter::zip, ops::{Add, Mul, Sub}};
+use std::ops::{Add, Mul, Sub};
 use ndarray::{prelude::*, OwnedRepr};
-use pyo3::prelude::*;
+use pyo3::{exceptions::PyTypeError, prelude::*};
 const EPS: f64 = 0.00001;
-
 
 // ==============
 // === Vector ===
@@ -21,6 +20,13 @@ impl Vector {
     }
     fn distance(self, rhs: Self) -> f64 {
         (rhs - self).dot(rhs - self).sqrt()
+    }
+}
+#[pymethods]
+impl Vector {
+    #[new]
+    fn new(x: f64, y: f64) -> Self {
+        Vector { x, y }
     }
 }
 impl Mul for Vector {
