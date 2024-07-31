@@ -302,7 +302,7 @@ fn rsd_pcm_steps(rsd: &FSD) -> Result<Option<Vec<(f64,f64)>>, String> {
 
 
         // Figure out axis.
-        let a = if j_off == 0. { 0 } else { 1 };
+        let a = if i_off == 0. { 0 } else { 1 };
 
         // Convert i, i_off, j, j_off into x and y.
         let (mut x, mut x_off, mut y, mut y_off) = [(i, i_off, j, j_off), (j, j_off, i, i_off)][a];
