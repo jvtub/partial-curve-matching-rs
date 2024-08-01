@@ -285,6 +285,7 @@ fn run_test(state: State, testnumber: usize) -> Result<(), String> {
     draw_fsd(&fsd, format!("fsd_{testnumber}").as_str(), None);
 
     let rsd = fsd.to_rsd();
+    draw_fsd(&rsd, format!("rsd_{testnumber}").as_str(), None);
     let opt_steps = rsd.pcm_steps()?;
     draw_fsd(&rsd, format!("path_{testnumber}").as_str(), opt_steps.clone());
 
