@@ -71,8 +71,8 @@ fn curve_length(c: &Curve) -> f64 {
 // === Visualization logic ===
 // ===========================
 
-/// Drawing Free-Space Diagram as an image to disk.
-fn draw_fsd(fsd: &FSD, filename: &str) -> Result<(), Box<dyn std::error::Error>> {
+/// Drawing Free-Space Diagram as an image to disk. If provided, draw steps along the RSD.
+fn draw_fsd(fsd: &FSD, filename: &str, opt_steps: Option<Steps>) -> Result<(), Box<dyn std::error::Error>> {
     let margin = 20; // 20 pixels margin
     let width = fsd.n * 20 + 2 * margin;
     let height = fsd.m * 20 + 2 * margin;
@@ -92,6 +92,11 @@ fn draw_fsd(fsd: &FSD, filename: &str) -> Result<(), Box<dyn std::error::Error>>
     };
     let reachable = ShapeStyle {
         color: GREEN_400.mix(0.6),
+        filled: true,
+        stroke_width: 1,
+    };
+    let path = ShapeStyle {
+        color: BLACK.mix(1.0),
         filled: true,
         stroke_width: 1,
     };
@@ -141,6 +146,13 @@ fn draw_fsd(fsd: &FSD, filename: &str) -> Result<(), Box<dyn std::error::Error>>
             else         { ((20.*y) as i32, height - (20.*x) as i32) }
         }).collect();
         drawing_area.draw(&Polygon::new(seg, unreachable))?;
+    }
+
+    if let Some(steps) = opt_steps {
+        for ((x1, y1), (x2, y2)) in zip(&steps,&steps[1..]) {
+            let seg: Vec<(i32, i32)> = vec![((20.* x1) as i32, height - (20.*y1) as i32), ((20.* x2) as i32, height - (20.*y2) as i32)];
+            drawing_area.draw(&Polygon::new(seg, path))?;
+        }
     }
 
 
@@ -228,6 +240,8 @@ fn check_corner_consistency(fsd: &FSD) -> Result<(), String> {
     Ok(())
 }
 
+type Steps = Vec<(f64, f64)>;
+
 /// Check steps result is within distance.
 fn check_steps(c1: Curve, c2: Curve, steps: Vec<(f64, f64)>, eps: f64) -> Result<(), String> {
     // Check distance while walking is within threshold.
@@ -255,19 +269,19 @@ fn check_steps(c1: Curve, c2: Curve, steps: Vec<(f64, f64)>, eps: f64) -> Result
 
 /// Test validity of running a state.
 // fn run_test(state: State) -> Result<(), Box<dyn std::error::Error>> {
-fn run_test(state: State) -> Result<(), String> {
+fn run_test(state: State, testnumber: usize) -> Result<(), String> {
     let State { ps, qs, eps } = state.clone();
 
     let fsd = FSD::new(ps.clone(), qs.clone(), eps);
     check_corner_consistency(&fsd)?;
-    draw_fsd(&fsd, "fsd");
+    draw_fsd(&fsd, format!("fsd_{testnumber}").as_str(), None);
 
     let rsd = fsd.to_rsd();
-    draw_fsd(&rsd, "rsd");
+    let opt_steps = rsd.pcm_steps()?;
+    draw_fsd(&rsd, format!("path_{testnumber}").as_str(), opt_steps.clone());
+
     let partial = rsd.check_pcm();
     println!("Is there a partial curve match?: {partial:?}.");
-
-    let opt_steps = rsd.pcm_steps()?;
     if partial && opt_steps.is_none() {
         return Err(format!("Should find steps if partial curve match is true."));
     }
@@ -361,7 +375,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     for (i, case) in cases.into_iter().enumerate() {
-        let res_test = run_test(case.clone());
+        let res_test = run_test(case.clone(), i);
         if res_test.is_err() {
             // Print we got an error.
             println!("Test case {} failed. Error message:", i);
