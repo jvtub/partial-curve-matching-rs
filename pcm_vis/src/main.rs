@@ -244,6 +244,14 @@ type Steps = Vec<(f64, f64)>;
 
 /// Check steps result is within distance.
 fn check_steps(c1: Curve, c2: Curve, steps: Vec<(f64, f64)>, eps: f64) -> Result<(), String> {
+
+    // Check monotonic.
+    for ((_i1, _j1), (_i2, _j2)) in zip(&steps, &steps[1..]) {
+        if (_i1 > _i2) || (_j1 > _j2) {
+             return Err(format!("Decreasing from step ({_i1}, {_j1}) to ({_i2}, {_j2})."));
+        }
+    }
+
     // Check distance while walking is within threshold.
     for (_i, _j) in steps {
         let i = _i.floor();
