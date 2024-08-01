@@ -154,6 +154,25 @@ impl LineBoundary {
 // === Free-Space Diagram ===
 // ==========================
 
+/// Position on the FSD considering axis.
+type FSDPosition = (usize, usize, usize, f64);
+
+/// Convert a FSD position into curve positions.
+fn position_to_ij((axis, x, y, off): FSDPosition) -> (f64, f64) {
+    [(x as f64, y as f64 + off), (y as f64 + off, x as f64)][axis]
+}
+
+/// Convert position into a FSD horizontal/vertical cell.
+fn position_to_seg((axis, x, y, off): FSDPosition) -> (usize, usize, usize) {
+    (axis, x, y)
+}
+
+/// Check whether position is on the left boundary of the FSD.
+fn position_on_left_boundary((axis, x, y, off): (usize, usize, usize, f64)) -> bool {
+    (axis == 0 && x == 0) ||
+    (axis == 1 && y == 0)
+}
+
 /// Free-Space Diagram.
 #[derive(Debug)]
 pub struct FSD {
@@ -282,19 +301,17 @@ impl FSD {
         let m = rsd.m;
 
         let mut steps = vec![];
-        let mut found = false;
-
-        let mut i = n - 1;
-        let mut i_off = 0.;
-        let mut j = 0;
-        let mut j_off = 0.;
+        let mut curr = (0, 0, 0, 0.);
 
         // Seek lowest non-empty boundary on right side of the RSD.
         // (Basically performs PCM existence check as well.)
-        for (_j, lb) in rsd.segs.slice(s![0,i,..]).iter().enumerate() {
+        let mut found = false;
+        for (_j, lb) in rsd.segs.slice(s![0,n-1,..]).iter().enumerate() {
             if let Some(LineBoundary { a, b }) = lb {
-                j = _j;
-                j_off = *a;
+                let x = n - 1;
+                let y = _j;
+                let off = *a;
+                curr = (0, x, y, off);
                 found = true;
                 break;
             }
@@ -302,61 +319,58 @@ impl FSD {
         if !found { return Ok(None) }
 
         // Final step is found.
-        steps.push((i as f64 + i_off, j as f64 + j_off));
+        steps.push(position_to_ij(curr));
 
         // Walk backwards. (Walk greedily, it should not matter).
-        while !(i == 0 && i_off == 0.) { // Walk while we're not at the start position of P.
+        while !(position_on_left_boundary(curr)) { // Walk while we're not at the start position of P.
 
-            let position = (i as f64 + i_off, j as f64 + j_off);
-            if !(i_off == 0. || j_off == 0.) { return Err(format!("Not at any RSD boundary while traversing ({position:?}).")); }
-
-
-            // Figure out axis.
-            let a = if i_off == 0. { 0 } else { 1 };
-
-            // Convert i, i_off, j, j_off into x and y.
-            let (mut x, mut x_off, mut y, mut y_off) = [(i, i_off, j, j_off), (j, j_off, i, i_off)][a];
-
-            let curr = (a, x, y);
-            if rsd.segs[curr].is_none() {
+            // println!("curr: {curr:?}");
+            if rsd.segs[position_to_seg(curr)].is_none() {
                 return Err(format!("Current segment while walking ({curr:?}) should not be empty."));
             }
 
             // Try to walk backwards.
-            let opt_prev = if y > 0 { Some((a  , x, y-1)) } else { None }; // previous.
-            let opt_para = if x > 0 { Some((a  , x-1, y)) } else { None }; // parallel.
-            let opt_orth = if y > 0 { Some((1-a, y-1, x)) } else { None }; // orthogonal.
+            let (axis, x, y, off) = curr;
+            let opt_prev = if off == 0. && y > 0 { 
+                Some((axis, x, y-1)) 
+            } else { None }; // previous.
+            let opt_para = if off >  0. && x > 0 { 
+                Some((axis, x-1, y)) 
+            } else { None }; // parallel.
+            let opt_orth = if x > 0 { 
+                Some((1-axis, y, x-1))
+            } else { None }; // orthogonal.
 
             let mut next = None;
             if let Some(prev) = opt_prev {
                 if let Some(LineBoundary { a: a_, b: b_ }) = rsd.segs[prev] {
-                    if y_off == 0. && b_ == 1. {
-                        next = Some(prev);
-                        x_off = 0.;
-                        y_off = a_;
-                        y -= 1;
+                    if off == 0. && b_ == 1. {
+                        // println!("prev");
+                        let (axis, x, y) = prev;
+                        let off = a_;
+                        next = Some((axis, x, y, off));
                     }
                 }
             }
 
             if next.is_none() && let Some(orth) = opt_orth {
                 if let Some(LineBoundary { a: a_, b: b_ }) = rsd.segs[orth] {
-                    if (y_off == 0. && b_ == 1.) || y_off > 0. {
-                        next = Some(orth);
-                        x_off = a_;
-                        y_off = 0.;
-                        x -= 1;
+                    if (off == 0. && b_ == 1.) || off > 0. {
+                        // println!("orth");
+                        let (axis, x, y) = orth;
+                        let off = a_;
+                        next = Some((axis, x, y, off));
                     } 
                 }
-            }
+            } 
 
             if next.is_none() && let Some(para) = opt_para {
                 if let Some(LineBoundary { a: a_, b: b_ }) = rsd.segs[para] {
-                    if y_off >= a_ {
-                        next = Some(para);
-                        x_off = 0.;
-                        y_off = a_;
-                        x -= 1;
+                    if off >= a_ {
+                        // println!("para");
+                        let (axis, x, y) = para;
+                        let off = a_;
+                        next = Some((axis, x, y, off));
                     }
                 }
             }
@@ -364,12 +378,10 @@ impl FSD {
             if next.is_none() {
                 return Err(format!("Should find next step in backwards walk at {curr:?}."));
             }
-            
-            // Convert back x and y into i, i_off, j, j_off.
-            (i, i_off, j, j_off) = [(x, x_off, y, y_off), (y, y_off, x, x_off)][a];
+            // println!("next: {next:?}");
+            curr = next.unwrap();
+            steps.push(position_to_ij(curr));
 
-            let position = (i as f64 + i_off, j as f64 + j_off);
-            steps.push(position);
         }
 
         steps.reverse();
