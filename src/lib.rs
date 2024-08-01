@@ -2,17 +2,18 @@
 use std::ops::{Add, Mul, Sub};
 use ndarray::{prelude::*, OwnedRepr};
 use pyo3::{exceptions::PyTypeError, prelude::*};
-const EPS: f64 = 0.00001;
+use serde_derive::{Deserialize, Serialize};
+pub const EPS: f64 = 0.00001;
 
 // ==============
 // === Vector ===
 // ==============
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[pyclass]
 pub struct Vector {
-    x: f64,
-    y: f64
+    pub x: f64,
+    pub y: f64
 }
 impl Vector {
     pub fn dot(self, rhs: Self) -> f64 {
@@ -80,9 +81,9 @@ pub type OptLineBoundary = Option<LineBoundary>;
 #[derive(Debug, Clone, Copy)]
 pub struct LineBoundary {
     /// Starting point, somewhere on the unit interval, but must be smaller than b.
-    a: f64,
+    pub a: f64,
     /// End point, somewhere on the unit interval, but must be larger than a.
-    b: f64
+    pub b: f64
 }
 impl LineBoundary {
     
@@ -156,17 +157,16 @@ impl LineBoundary {
 /// Free-Space Diagram.
 #[derive(Debug)]
 pub struct FSD {
-    n: usize,
-    m: usize,
+    pub n: usize,
+    pub m: usize,
     /// Axis-specific dimensions.
-    dims: [(usize, usize); 2], 
+    pub dims: [(usize, usize); 2], 
     /// Cell boundaries for both axii.
-    segs : ArrayBase<OwnedRepr<OptLineBoundary>, Dim<[usize; 3]>>,
-    /// Cornerpoints either true or not. 
-    /// (Used for debugging purposes, the consistency in segment computations).
-    corners: ArrayBase<OwnedRepr<bool>, Dim<[usize; 2]>>,
+    pub segs : ArrayBase<OwnedRepr<OptLineBoundary>, Dim<[usize; 3]>>,
+    /// Cornerpoints either true or not. (Used for debugging purposes, the consistency in segment computations).
+    pub corners: ArrayBase<OwnedRepr<bool>, Dim<[usize; 2]>>,
     /// FSD and RSD are the same struct, use this boolean to ensure being in the correct space.
-    is_rsd: bool
+    pub is_rsd: bool
 }
 impl FSD {
     /// Construct empty FSD.
@@ -301,7 +301,6 @@ impl FSD {
         while !(i == 0 && i_off == 0.) { // Walk while we're not at the start position of P.
 
             let position = (i as f64 + i_off, j as f64 + j_off);
-            println!("position: {position:?}");
             if !(i_off == 0. || j_off == 0.) { return Err(format!("Not at any RSD boundary while traversing ({position:?}).")); }
 
 
@@ -380,20 +379,13 @@ impl FSD {
 /// Returns any subcurve of qs (if it exists) with Fréchet distance to ps below threshold epsilon.
 #[pyfunction]
 pub fn partial_curve(ps: Curve, qs: Curve, eps: f64) -> Result<Option<(f64, f64)>, PyErr> {
-    // println!("ps: {ps:?}");
-    // println!("qs: {qs:?}");
-    // println!("eps: {eps:?}");
     let fsd = FSD::new(ps, qs, eps);
     let rsd = fsd.to_rsd();
     let opt_steps = rsd.pcm_steps().map_err(|str| PyErr::new::<PyTypeError, _>(str))?;
     if opt_steps.is_none() { 
-        // println!("No steps found. ;(");
         Ok(None) 
     } else {
         let steps = opt_steps.unwrap();
-        // for step in &steps {
-        //     println!("{step:?}");
-        // }
         let start= steps[0].1;
         let end = steps.last().unwrap().1;
         Ok(Some((start, end)))
@@ -401,9 +393,6 @@ pub fn partial_curve(ps: Curve, qs: Curve, eps: f64) -> Result<Option<(f64, f64)
 }
 
 
-#[pymodule]
-fn partial_curve_matching(m: &Bound<'_, PyModule>) -> PyResult<()> {
-    m.add_class::<Vector>()?;
-    m.add_function(wrap_pyfunction!(partial_curve, m)?)?;
-    Ok(())
+pub mod prelude {
+    pub use crate::{OptLineBoundary, LineBoundary, Vector, FSD, partial_curve, EPS, Curve};
 }

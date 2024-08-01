@@ -1,11 +1,20 @@
 [package]
-name = "partial-curve-matching-frechet-rs"
+name = "pcm"
 version = "0.1.0"
+authors = ["Jeroen van Tubergen <jvtubergen@pm.me>"]
 edition = "2021"
 
+[lib]
+name = "pcm"
+path = "src/lib.rs"
+
 [dependencies]
-bincode = "1.3.3"
-plotters = "0.3.6"
-rand = "0.8.5"
+ndarray = "0.15.6"
+pyo3 = "0.22.2"
 serde = "1.0.204"
 serde_derive = "1.0.204"
+
+[workspace]
+members = [
+    "pcm_pyo3", "pcm_vis",
+]
