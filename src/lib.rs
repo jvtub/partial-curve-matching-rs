@@ -221,6 +221,13 @@ impl FSD {
         // Initiate whole left FSD border (we seek partial curve).
         rsd.segs.slice_mut(s![0, 0, ..]).assign(&fsd.segs.slice(s![0, 0, ..]));
 
+        // Initiate first lower-left horizontal RSD border (since neither prev, para, nor orth exists).
+        if let Some(LineBoundary { a, b }) = fsd.segs[(1, 0, 0)] {
+            if a == 0. {
+                rsd.segs[(1, 0, 0)] = Some(LineBoundary { a, b });
+            }
+        }
+
         // Walk all cells left to right, bottom to top.
         for j in 0..m {
             for i in 0..n {
