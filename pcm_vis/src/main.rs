@@ -1,24 +1,3 @@
-/// Author: jvtubergen
-/// * This code has copied pyfrechet for computing the FSD.
-// The choice to switch to Rust is an arbitrary personal choice:
-/// * Building rust code is fun.
-/// * Practice with linking Rust code to Python (thus building python packages using rust code).
-/// * Potentially upgrading to parallel implementation.
-/// 
-/// Use of code repo:
-/// This code solves the PCMP (Partial Curve Matching Problem).
-/// PCMP: Given a curve P, a curve Q and a distance threshold epsilon, is there some subcurve Q' of Q in such that the Fréchet distance between P and Q' is below epsilon? 
-/// We limit ourselves to curves P and Q that are polygonal chains, and use the continuous strong Fréchet distance as a (sub)curve similarity/distance measure.
-/// 
-/// Design choices:
-/// We assume the partial curve to be P, and the curve to find some subcurve to be in Q.
-/// In the FSD (Free-Space Diagram) we place P on the horizontal axis and Q on the vertical axis.
-/// Thus, since any subcurve of Q suffices, we may start at any vertical position on the left side of the FSD and end at any vertical position on the right side of the FSD.
-/// The path still has to be monotonic though (since its the strong Fréchet distance)
-/// 
-/// Assumptions:
-/// Assert all edges are non-zero length (thus no subsequent duplicated vertices).
-/// 
 use std::{fs, io::Read, iter::zip, path::Path};
 extern crate rand;
 use pcm::prelude::*;
@@ -155,28 +134,54 @@ fn draw_fsd(fsd: &FSD, filename: &str, opt_steps: Option<Steps>) -> Result<(), B
         }
     }
 
+    Ok(())
+}
 
-    // let mut reachable_corners = vec![];
-    // let mut unreachable_corners = vec![];
+fn draw_curves(c1: Curve, c2: Curve, filename: &str) -> Result<(), Box<dyn std::error::Error>> {
 
-    // Reachable corner points.
-    // for i in 0..n {
-    //     for j in 0..m {
-    //         let coord = (20*i as i32, 20*j as i32);
-    //         if fsd.corners[(i,j)] {
-    //             reachable_corners.push(coord);
-    //         } else {
-    //             unreachable_corners.push(coord);
-    //         }
-    //     }
-    // }
-    // Draw reachable and unreachable cornerpoints.
-    // for coord in reachable_corners {
-    //     drawing_area.draw(&Circle::new(coord, 1, reachable))?;
-    // }
-    // for coord in unreachable_corners {
-    //     drawing_area.draw(&Circle::new(coord, 1, unreachable))?;
-    // }
+    // Setting up drawing area.
+    let margin = 20; // 20 pixels margin
+    let width = 400 + 2 * margin;
+    let height = 400 + 2 * margin;
+    let filename = format!("{}.png", filename);
+    let drawing_area = BitMapBackend::new(&filename, (width as u32, height as u32)).into_drawing_area();
+    drawing_area.fill(&WHITE)?;
+    let drawing_area = drawing_area.margin(20, 20, 20, 20);
+
+    // Computing boundaries.
+    let pmin = c1.clone().into_iter().chain(c2.clone().into_iter()).reduce(|acc, v| acc.min(&v)).unwrap();
+    let pmax = c1.clone().into_iter().chain(c2.clone().into_iter()).reduce(|acc, v| acc.max(&v)).unwrap();
+    let pdiff = pmax - pmin;
+
+    // Computing curve point positions on drawing area.
+    let vector_to_point = |v| {
+        let position = Vector::new(400., 400.) * (v - pmin) / pdiff;
+        (position.x as i32, position.y as i32)
+    };
+    
+    let seg1: Vec<(i32, i32)> = c1.into_iter().map(vector_to_point).collect();
+    let seg2: Vec<(i32, i32)> = c2.into_iter().map(vector_to_point).collect();
+
+    // Drawing the two polygonal chains.
+    let colorc1 = ShapeStyle {
+        color: RED_300.mix(0.6),
+        filled: true,
+        stroke_width: 1,
+    };
+    let colorc2 = ShapeStyle {
+        color: GREEN_400.mix(0.6),
+        filled: true,
+        stroke_width: 1,
+    };
+
+    for (p1, p2) in zip(&seg1, &seg1[1..]) {
+        drawing_area.draw(&Polygon::new(vec![*p1, *p2], colorc1))?;
+    }
+
+    for (p1, p2) in zip(&seg2, &seg2[1..]) {
+        drawing_area.draw(&Polygon::new(vec![*p1, *p2], colorc2))?;
+    }
+
 
     Ok(())
 }
@@ -280,6 +285,8 @@ fn check_steps(c1: Curve, c2: Curve, steps: Vec<(f64, f64)>, eps: f64) -> Result
 fn run_test(state: State, testnumber: usize) -> Result<(), String> {
     let State { ps, qs, eps } = state.clone();
 
+    draw_curves(ps.clone(), qs.clone(), format!("curve_{testnumber}").as_str());
+
     let fsd = FSD::new(ps.clone(), qs.clone(), eps);
     check_corner_consistency(&fsd)?;
     draw_fsd(&fsd, format!("fsd_{testnumber}").as_str(), None);
@@ -363,7 +370,7 @@ fn read_cases() -> Result<Vec<State>, Box<dyn std::error::Error>> {
 // ==================
 
 const DISCOVER: bool = false;
-const RUN_COUNT: usize = 10;
+const RUN_COUNT: usize = 100;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
 

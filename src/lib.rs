@@ -1,5 +1,5 @@
 #![feature(let_chains)]
-use std::ops::{Add, Mul, Sub};
+use std::ops::{Add, Div, Mul, Sub};
 use ndarray::{prelude::*, OwnedRepr};
 use pyo3::{exceptions::PyTypeError, prelude::*};
 use serde_derive::{Deserialize, Serialize};
@@ -22,12 +22,33 @@ impl Vector {
     pub fn distance(self, rhs: Self) -> f64 {
         (rhs - self).dot(rhs - self).sqrt()
     }
+    pub fn min(&self, rhs: &Self) -> Self {
+        Self {
+            x: self.x.min(rhs.x),
+            y: self.y.min(rhs.y),
+        }
+    }
+    pub fn max(&self, rhs: &Self) -> Self {
+        Self {
+            x: self.x.max(rhs.x),
+            y: self.y.max(rhs.y),
+        }
+    }
 }
 #[pymethods]
 impl Vector {
     #[new]
-    fn new(x: f64, y: f64) -> Self {
+    pub fn new(x: f64, y: f64) -> Self {
         Vector { x, y }
+    }
+}
+impl Div for Vector {
+    type Output = Vector;
+    fn div(self, rhs: Self) -> Self::Output {
+        Vector {
+            x: self.x / rhs.x,
+            y: self.y / rhs.y
+        }
     }
 }
 impl Mul for Vector {
