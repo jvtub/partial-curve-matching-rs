@@ -19,7 +19,7 @@ In `./pcm_vis/src/main.rs` rust code example of generating test cases, rendering
 ## Performance considerations
 This code is definitely _not_ optimized (both in terms of complexity and implementation), see [Future work](#future-work-optimizations) for obvious points of improvements.
 E.g. all the boundaries of the FSD and RSD is computed, no heuristics are applied, it is single-threaded, vectors are unnecessarily copied all over the place.
-The use-case of this code repo is running the BundlePatcher [^geoalg], and I only intend to improve in order to make those algorithms run sufficiently fast.
+The use-case of this code repo is running the BundlePatcher<a href="#bundlepatcher" id="bundlepatcherref"><sup>4</sup></a>, and I only intend to improve in order to make those algorithms run sufficiently fast.
 
 ## Algorithm outline
 With this context of [Performance Considerations](#performance-considerations) clear, here the algorithm procedure.
@@ -111,9 +111,9 @@ todo
 todo
 
 ## Acknowledgement
-For detailed information on the FSD and RSD we refer to the original paper by Alt & Godau [^alt].
+For detailed information on the FSD and RSD we refer to the original paper by Alt & Godau <a href="#altgodau" id="altgodauref"><sup>1</sup></a>.
 
-Much work taken from pyfrechet [^pyfrechet]
+Work taken from pyfrechet<a href="#pyfrechet" id="pyfrechetref"><sup>3</sup></a>
 * Computing cell boundary.
 * Using separate array for horizontal and vertical cell boundaries.
 
@@ -125,14 +125,14 @@ Extended this work by:
 
 
 ## Future work (optimizations)
-Not that I intend to perform these optimizations, these are points of interest to work on.
+Points of interest to work on:
 * [ ] Lazily FSD and RSD construction
-* [ ] Heuristics to minimize cell boundary computations (both minimizing the number of cell boundaries to compute [^maheshwari] and special cases to evaluate cell boundaries in bulk [^maheshwari])
+* [ ] PCM specific extention to FSD<a href="#maheshwari" id="maheshwariref"><sup>2</sup></a>
 * [ ] Multi-threaded
 * [ ] SIMD
 
 ## References
-[^alt] H. Alt and M. Godau, “Computing the Fréchet Distance between Two Polygonal Curves,” Int. J. Comput. Geom. Appl., vol. 05, no. 01n02, pp. 75–91, Mar. 1995, doi: 10.1142/S0218195995000064.\
-[^maheshwari] A. Maheshwari, J.-R. Sack, K. Shahbaz, and H. Zarrabi-Zadeh, “Improved Algorithms for Partial Curve Matching,” Algorithmica, vol. 69, no. 3, pp. 641–657, Jul. 2014, doi: 10.1007/s00453-013-9758-3.
-[^pyfrechet] https://github.com/compgeomTU/frechetForCurves
-[^bundlepatcher] https://github.com/jvtubergen/geoalg
+<a id="altgodau" href="#altgodauref"><sup>1</sup></a> H. Alt and M. Godau, “Computing the Fréchet Distance between Two Polygonal Curves,” Int. J. Comput. Geom. Appl., vol. 05, no. 01n02, pp. 75–91, Mar. 1995, doi: 10.1142/S0218195995000064.\
+<a id="maheshwari" href="#maheshwariref"><sup>2</sup></a> A. Maheshwari, J.-R. Sack, K. Shahbaz, and H. Zarrabi-Zadeh, “Improved Algorithms for Partial Curve Matching,” Algorithmica, vol. 69, no. 3, pp. 641–657, Jul. 2014, doi: 10.1007/s00453-013-9758-3.\
+<a id="pyfrechet" href="#pyfrechetref"><sup>3</sup></a> https://github.com/compgeomTU/frechetForCurves \
+<a id="bundlepatcher" href="#bundlepatcher"><sup>4</sup></a> https://github.com/jvtubergen/geoalg.
