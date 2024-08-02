@@ -7,10 +7,14 @@ We limit ourselves to polygonal chains, and use the continuous strong Fréchet d
 Furthermore do we assume the points of the curves $P$ and $Q$ to be in general position (thus all points are unique and therefore all points have non-zero pairwise distance).
 
 ## Usage
+### Python module
 To build the python library run the `./build_python_module.sh` script.\
 This constructs a "partial_curve_matching.so" file.
 Make sure to place this file at where you run the python code from.
 Check `main.py` for example usage. 
+
+### Rust binary
+In `./pcm_vis/src/main.rs` rust code example of generating test cases, rendering related images, and computing PCM.
 
 ## Performance considerations
 This code is definitely _not_ optimized (both in terms of complexity and implementation), see [Future work](#future-work-optimizations) for obvious points of improvements.

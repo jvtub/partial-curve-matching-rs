@@ -369,8 +369,8 @@ fn read_cases() -> Result<Vec<State>, Box<dyn std::error::Error>> {
 // === Executable ===
 // ==================
 
-const DISCOVER: bool = false;
-const RUN_COUNT: usize = 100;
+const DISCOVER: bool = true;
+const RUN_COUNT: usize = 10;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
 
