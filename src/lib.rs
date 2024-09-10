@@ -132,39 +132,31 @@ impl LineBoundary {
     }
 
     /// Compute unit-distance free space line boundary between point p and line segment q.
-    pub fn compute(p: Vector, q1: Vector, q2: Vector, eps: f64 ) -> OptLineBoundary {
-        let dq = q2 - q1;
-        // let dq = q2 - q1;
-        let divisor = dq.dot(dq);
+    pub fn compute(p: Vector, q0: Vector, q1: Vector, eps: f64 ) -> OptLineBoundary {
+        let v = q1 - q0;
+        let vli = 1. / v.dot(v).sqrt();
+        let vn = vli * v;
 
-        let b = dq.dot(p - q1);
-        let c = divisor * (q1.dot(q1) + p.dot(p) - 2. * q1.dot(p) - eps * eps);
-        let root = b * b - c;
+        let l = p - q0;
+        let tca = l.dot(vn);
+        let d2 = l.dot(l) - tca * tca;
 
-        if root < 0. {
-            return None;
-        }
-        let root = root.sqrt();
+        let e2 = eps * eps;
+        if d2 > e2 { return None; }
 
-        // Possible intersection points.
-        let t1 = (b - root) / divisor;
-        let t2 = (b + root) / divisor;
+        let thc = (e2 - d2).sqrt();
+        let t0 = vli * (tca - thc);
+        let t1 = vli * (tca + thc);
+        let p0 = q0 + t0 * v; // First point of intersection.
+        let p1 = q0 + t1 * v; // Second point of intersection.
 
-        // Bound to interval [0,1];
-        let t1 = t1.min(1.).max(0.);  
-        let t2 = t2.min(1.).max(0.);  
-
-        if t2 - t1 < EPS {
-            None
-        } else {
-            Some(
-                LineBoundary {
-                    a: t1,
-                    b: t2
-                }
-            )
-        }
-
+        if t1 < 0. || t0 > 1. || t1 - t0 < 0.0001 { return None; }
+        Some(
+            LineBoundary {
+                a: t0.min(1.).max(0.),
+                b: t1.min(1.).max(0.)
+            }
+        )
     }
 
 
