@@ -298,10 +298,12 @@ fn run_test(state: State, testnumber: usize) -> Result<(), String> {
 
     let partial = rsd.check_pcm();
     println!("Is there a partial curve match?: {partial:?}.");
-    if partial && opt_steps.is_none() {
-        return Err(format!("Should find steps if partial curve match is true."));
+    if partial {
+        if opt_steps.is_none() {
+            return Err(format!("Should find steps if partial curve match is true."));
+        }
+        check_steps(ps, qs, opt_steps.unwrap(), eps)?;
     }
-    check_steps(ps, qs, opt_steps.unwrap(), eps)?;
     
     Ok(())
 }
