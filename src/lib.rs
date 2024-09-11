@@ -228,6 +228,24 @@ impl FSD {
             for x in 0..dims.0 {
                 for y in 0..dims.1 {
                     fsd.segs[(axis,x,y)] = LineBoundary::compute(c1[x], c2[y], c2[y+1], eps);
+                    // Sanity check by the relation on the existence of a cornerpoint in the FSD and the curve points being within eps distance.
+                    if let Some(LineBoundary { a, b }) = fsd.segs[(axis,x,y)] {
+                        if a == 0. {
+                            assert!(c1[x].distance(c2[y]) < eps);
+                        }
+                        if c1[x].distance(c2[y]) < eps {
+                            assert!(a == 0.);
+                        }
+                        if b == 1. {
+                            assert!(c1[x].distance(c2[y+1]) < eps);
+                        }
+                        if c1[x].distance(c2[y+1]) < eps {
+                            assert!(b == 1.);
+                        }
+                    } else {
+                        assert!(c1[x].distance(c2[y])   >= eps - 5.*0.0001);
+                        assert!(c1[x].distance(c2[y+1]) >= eps - 5.*0.0001);
+                    }
                 }
             }
         }
