@@ -344,52 +344,64 @@ impl FSD {
 
             // Try to walk backwards.
             let (axis, x, y, off) = curr;
-            let opt_prev = if off == 0. && y > 0 { 
-                Some((axis, x, y-1)) 
-            } else { None }; // previous.
-            let opt_para = if off >  0. && x > 0 { 
-                Some((axis, x-1, y)) 
-            } else { None }; // parallel.
-            let opt_orth = if x > 0 { 
-                Some((1-axis, y, x-1))
-            } else { None }; // orthogonal.
-
-            let mut next = None;
-            if let Some(prev) = opt_prev {
-                if let Some(LineBoundary { a: a_, b: b_ }) = rsd.segs[prev] {
-                    if off == 0. && b_ == 1. {
-                        // println!("prev");
-                        let (axis, x, y) = prev;
-                        let off = a_;
-                        next = Some((axis, x, y, off));
-                    }
-                }
+            let mut states = vec![curr];
+            if off == 0. { // In this case we can decide to walk both directions.
+                states.push((1-axis, y, x, off))
             }
 
-            if next.is_none() && let Some(orth) = opt_orth {
-                if let Some(LineBoundary { a: a_, b: b_ }) = rsd.segs[orth] {
-                    if (off == 0. && b_ == 1.) || off > 0. {
-                        // println!("orth");
-                        let (axis, x, y) = orth;
-                        let off = a_;
-                        next = Some((axis, x, y, off));
-                    } 
-                }
-            } 
+            let mut next = None;
+            for (axis, x, y, off) in states {
+                if next.is_none() {
+                    let opt_prev = if off == 0. && y > 0 { 
+                        Some((axis, x, y-1)) 
+                    } else { None }; // previous.
+                    let opt_para = if off >  0. && x > 0 { 
+                        Some((axis, x-1, y)) 
+                    } else { None }; // parallel.
+                    let opt_orth = if x > 0 { 
+                        Some((1-axis, y, x-1))
+                    } else { None }; // orthogonal.
 
-            if next.is_none() && let Some(para) = opt_para {
-                if let Some(LineBoundary { a: a_, b: b_ }) = rsd.segs[para] {
-                    if off >= a_ {
-                        // println!("para");
-                        let (axis, x, y) = para;
-                        let off = a_;
-                        next = Some((axis, x, y, off));
+                    // Attempt to walk to previous.
+                    if let Some(prev) = opt_prev {
+                        if let Some(LineBoundary { a: a_, b: b_ }) = rsd.segs[prev] {
+                            if off == 0. && b_ == 1. {
+                                // println!("prev");
+                                let (axis, x, y) = prev;
+                                let off = a_;
+                                next = Some((axis, x, y, off));
+                            }
+                        }
+                    }
+
+                    // Attempt to walk to orthogonal.
+                    if next.is_none() && let Some(orth) = opt_orth {
+                        if let Some(LineBoundary { a: a_, b: b_ }) = rsd.segs[orth] {
+                            if (off == 0. && b_ == 1.) || off > 0. {
+                                // println!("orth");
+                                let (axis, x, y) = orth;
+                                let off = a_;
+                                next = Some((axis, x, y, off));
+                            } 
+                        }
+                    } 
+
+                    // Attempt to walk to parallel.
+                    if next.is_none() && let Some(para) = opt_para {
+                        if let Some(LineBoundary { a: a_, b: b_ }) = rsd.segs[para] {
+                            if off >= a_ {
+                                // println!("para");
+                                let (axis, x, y) = para;
+                                let off = a_;
+                                next = Some((axis, x, y, off));
+                            }
+                        }
                     }
                 }
             }
 
             if next.is_none() {
-                return Err(format!("Should find next step in backwards walk at {curr:?}."));
+                return Err(format!("Should find next step in backwards walk at {curr:?}.\n{rsd:?}"));
             }
             // println!("next: {next:?}");
             curr = next.unwrap();
