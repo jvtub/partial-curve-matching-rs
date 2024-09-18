@@ -3,6 +3,8 @@ use std::ops::{Add, Div, Mul, Sub};
 use ndarray::{prelude::*, OwnedRepr};
 use pyo3::{exceptions::PyTypeError, prelude::*};
 use serde_derive::{Deserialize, Serialize};
+use std::collections::BTreeMap as Map;
+use std::collections::BTreeSet as Set;
 pub const EPS: f64 = 0.00001;
 
 // ==============
@@ -159,6 +161,10 @@ impl LineBoundary {
         )
     }
 
+    /// Check the other is a subset of self.
+    pub fn has_subset(&self, other: Self) -> bool {
+        self.b >= other.b && self.a <= other.a
+    }
 
 }
 
@@ -460,6 +466,305 @@ pub fn partial_curve(ps: Curve, qs: Curve, eps: f64) -> Result<Option<(f64, f64)
 }
 
 
-pub mod prelude {
-    pub use crate::{OptLineBoundary, LineBoundary, Vector, FSD, partial_curve, EPS, Curve};
+/// Node identifier.
+type NID = usize;
+
+/// Edge identifier.
+type EID = (usize, usize);
+
+/// Alternative, simplified datastructure for Free-Space Diagram.
+/// 
+/// This one is easier to extend in comparison to ArrayView which is not intended to append rows/columns.
+type FSD2 = Vec<Vec<Vec<OptLineBoundary>>>; // (x, y, horizontal|vertical)
+
+/// A sequence of nodes to walk along the graph.
+type Path = Vec<NID>;
+
+/// Graph structure which stores relevant information a simple undirected graph.
+#[pyclass]
+pub struct Graph {
+    /// Nodes with (x,y) coordinate.
+    nodes: Map<NID, Vector>,
+    /// Adjacent nodes.
+    adj: Map<NID, Set<NID>> 
+}
+
+impl Graph {
+
+    /// Store a graph struct, re-used as we apply to different curves.
+    pub fn new(vertices: Vec<(NID, Vector)>, edges: Vec<(NID, NID)>) -> Self {
+        let mut nodes = Map::new();
+        for (i, v) in vertices {
+            nodes.insert(i, v);
+        }
+        let mut adj: Map<NID, Set<NID>> = Map::new();
+        for (u, v) in edges {
+
+            if !adj.contains_key(&u) { adj.insert(u, Set::new()); }
+            if !adj.contains_key(&v) { adj.insert(v, Set::new()); }
+
+            adj.get_mut(&u).unwrap().insert(v);
+            adj.get_mut(&v).unwrap().insert(u);
+
+        }
+        Graph { nodes, adj }
+    }
+
+    pub fn curvature(&self, uv: EID) -> Curve {
+        let (u, v) = uv;
+        vec![self.nodes[&u], self.nodes[&v]]
+    }
+
+}
+
+/// Compute FSD out of two curves (first curve on horizontal axis, second curve on vertical axis).
+pub fn compute_fsd(ps: Curve, qs: Curve, eps: f64) -> FSD2 {
+
+    let n = ps.len();
+    let m = qs.len();
+    let mut fsd = vec![];
+    for y in 0..m {
+        let mut row = vec![];
+        for x in 0..n {
+            let horizontal = if x == n - 1 { 
+                None
+            } else {
+                LineBoundary::compute(qs[y], ps[x], ps[x+1], eps)
+            };
+            let vertical = if y == m - 1 {
+                None
+            } else {
+                LineBoundary::compute(ps[x], qs[y], qs[y+1], eps)
+            };
+            row.push(vec![horizontal, vertical]);
+        }
+        fsd.push(row);
+    }
+
+    fsd
+}
+
+
+fn fsd_height(fsd: &FSD2) -> usize {
+    fsd.len()
+}
+
+
+fn fsd_width(fsd: &FSD2) -> usize {
+    fsd[0].len()
+}
+
+
+/// Propagate bottom cell boundary reachability to the right while continuous.
+pub fn propagate_bottom_row(mut fsd: FSD2) -> FSD2{
+    let y = 0;
+    let n = fsd_width(&fsd);
+
+    // We propagate right while we have full boundaries.
+    let mut i = 0;
+    for x in 0..n { // n-1 latest width but n is set to None anyways.
+
+        let horizontal = fsd[y][x][0];
+        if horizontal.is_none() {
+            break;
+        }
+
+        let LineBoundary { a, b } = horizontal.unwrap();
+        if a > 0. {
+            break;
+        } 
+
+        i += 1;
+        if b < 1. {
+            break;
+        }
+    }
+
+    // Set unreachable cell boundaries to none.
+    for x in i..n {
+        fsd[y][x][0] = None;
+    }
+
+    fsd
+}
+
+
+/// Compute reachability in right and top cell boundary.
+/// 
+/// Left and bottom boundary are from RSD.
+/// Right and top boundary are from FSD.
+pub fn propagate_cell_reachability(bottom: OptLineBoundary, left: OptLineBoundary, right: OptLineBoundary, top: OptLineBoundary) -> (OptLineBoundary, OptLineBoundary) {
+
+    // Decide reachability of right cell boundary based on bottom and left cell boundary.
+    let goal_right = if bottom.is_some() {
+        right
+    } else if right.is_none() || left.is_none() {
+        None
+    } else {
+        let LineBoundary { a, b } = left.unwrap();
+        let LineBoundary { a: c, b: d } = right.unwrap();
+        LineBoundary::new(a.max(c), d)
+    };
+
+    // Decide reachability of top cell boundary based on bottom and left cell boundary.
+    let goal_top = if left.is_some() {
+        top
+    } else if top.is_none() || bottom.is_none() {
+        None
+    } else {
+        let LineBoundary { a, b } = bottom.unwrap();
+        let LineBoundary { a: c, b: d } = top.unwrap();
+        LineBoundary::new(a.max(c), d)
+    };
+    
+    
+    (goal_right, goal_top)
+}
+
+
+/// Convert an FSD into an RSD.
+pub fn fsd_to_rsd(mut fsd: FSD2) -> FSD2 {
+    
+    let m = fsd_height(&fsd);
+    let n = fsd_width(&fsd);
+
+    // Initiate bottom row. (Leave left boundary untouched, because we do PCM.)
+    fsd = propagate_bottom_row(fsd);
+
+    // Walk cells from left to right, bottom to top, and propagate reachability within cell boundaries.
+    for y in 0..m-1 {
+        for x in 0..n-1 {
+            let bottom = fsd[y][x][0];
+            let left   = fsd[y][x][1];
+            let top    = fsd[y+1][x][0];
+            let right  = fsd[y][x+1][1];
+
+            let (right, top) = propagate_cell_reachability(bottom, left, right, top);
+            fsd[y+1][x][0] = top;
+            fsd[y][x+1][1] = right;
+        }
+    }
+
+    fsd
+}
+
+
+/// Check whether the second [`OptLineBoundary`] is a subset of the first [`OptLineBoundary`].
+pub fn lb_is_subset(lb1: OptLineBoundary, lb2: OptLineBoundary) -> bool {
+    if lb2.is_none() { // If lb2 is none, lb1 is guaranteed to be larger.
+        return true;
+    } else if lb1.is_none() { // If lb2 is not none but lb1 is none, then lb2 must be larger.
+        return false;
+    } else { // If both do have some interval, simply check the subset of the interval.
+        let lb1 = lb1.unwrap();
+        let lb2 = lb2.unwrap();
+        return lb1.has_subset(lb2);
+    } 
+}
+
+
+/// Extract top boundary.
+pub fn extract_top(fsd: &FSD2) -> Vec<OptLineBoundary> {
+    let mut top = vec![];
+    let n = fsd_width(fsd);
+    let m = fsd_height(fsd);
+    for x in 0..n {
+        top.push(fsd[m-1][x][0]);
+    }
+    return top;
+}
+
+
+/// Returns true if the top is empty.
+pub fn is_top_empty(fsd: &FSD2) -> bool {
+    !extract_top(fsd).into_iter().any(|lb| lb.is_some())
+}
+
+#[pyfunction]
+pub fn make_graph(vertices: Vec<(NID, Vector)>, edges: Vec<(NID, NID)>) -> Graph {
+    Graph::new(vertices, edges)
+}
+
+/// Match curve against a graph with epsilon threshold.
+/// 
+/// todo (optimization): Lazily evaluate FDij's, initiate by checking solely the left boundary of every FDij.
+#[pyfunction]
+// pub fn compute(graph: Graph, ps: Curve, eps: f64) -> Result<Option<Vec<NID>>, String> {
+pub fn partial_curve_graph(graph: &Graph, ps: Curve, eps: f64) -> Result<Option<Vec<NID>>, PyErr> {
+
+    // Initiate FDij's and initial reachable paths.
+    let mut FDijs : Map<EID, FSD2> = Map::new();
+    let mut queue : Vec<(Path, Vec<OptLineBoundary>)> = vec![];
+    let n = ps.len();
+    for (i, js) in graph.adj.clone() { // Iterate all edges.
+        for j in js { // These are all the possible starting points we could have.
+            let eid: EID = (i, j);
+            let fsd = compute_fsd(ps.clone(), graph.curvature(eid), eps);
+            FDijs.insert(eid, fsd.clone());
+            let rsd = fsd_to_rsd(fsd);
+            if rsd[0][n-1][1].is_some() { // Non-empty right boundary found.
+                return Ok(Some(vec![i, j]));
+            }
+            if !is_top_empty(&rsd) { // If we can reach top, we can increment and check next element.
+                // Push horizontal top line segment.
+                // We are able to start at this edge for pcm curve matching. Initiate queue for evaluation.
+                queue.push((vec![i, j], extract_top(&rsd)));
+            }
+        }
+    }
+
+    // Per starting point, walk till we find a feasible path.
+    let mut totalcount = 0;
+    while queue.len() > 0 {
+        let (path, top) = queue.pop().unwrap();
+        // println!("Checking path: {path:?}.");
+        let i = path.last().unwrap().clone();
+
+        // Seek adjacent vertices which have not been visited yet.
+        let adjacents = graph.adj.get(&i).unwrap().clone();
+        let adjacents: Vec<NID> = adjacents.into_iter().filter(|&v| !path.contains(&v)).collect();
+
+        // If we can reach next element, make walk (add new vertex to path).
+        for j in adjacents.clone() {
+            totalcount += 1;
+
+            let eid: (usize, usize) = (i, j);
+            let mut fsd = FDijs.get(&eid).unwrap().clone();
+
+            // Sanity: Check top of RSD is a subset of bottom of FSD.
+            for x in 0..fsd_width(&fsd) {
+                let fsd_bot = fsd[0][x][0];
+                let rsd_top = top[x];
+                assert!(lb_is_subset(fsd_bot, rsd_top));
+            }
+
+            // Update bottom of fsd to top of rsd.
+            for x in 0..n { 
+                fsd[0][x][0] = top[x];
+            }           
+
+            // Walk from left to right and update rsd.
+            let rsd = fsd_to_rsd(fsd);
+            let mut path = path.clone();
+            path.push(j); 
+
+            if rsd[0][n-1][1].is_some() { // Non-empty right boundary found.
+                return Ok(Some(path));
+            }
+
+            if !is_top_empty(&rsd) {
+                // If not empty we push it to the stack.
+                queue.push((path, extract_top(&rsd)));
+            }
+        }
+    }
+    println!("Total paths checkted: {totalcount}");
+
+    Ok(None)
+}
+
+
+pub mod prelude {   
+    pub use crate::{OptLineBoundary, LineBoundary, Vector, FSD, partial_curve, EPS, Curve, Graph, partial_curve_graph, make_graph};
+}
 }
