@@ -187,13 +187,15 @@ fn position_on_left_boundary((axis, x, y, off): (usize, usize, usize, f64)) -> b
 }
 
 /// Free-Space Diagram.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct FSD {
+    /// Width (number of points on ps).
     pub n: usize,
+    /// Height (number of points on qs).
     pub m: usize,
-    /// Axis-specific dimensions.
+    /// Axis-specific dimensions (basically `[(n,m-1), (m,n-1)]`).
     pub dims: [(usize, usize); 2], 
-    /// Cell boundaries for both axii.
+    /// Cell boundaries for both axii. Format is (axis, x, y).
     pub segs : ArrayBase<OwnedRepr<OptLineBoundary>, Dim<[usize; 3]>>,
     /// Cornerpoints either true or not. (Used for debugging purposes, the consistency in segment computations).
     pub corners: ArrayBase<OwnedRepr<bool>, Dim<[usize; 2]>>,
@@ -253,7 +255,7 @@ impl FSD {
         // Constructing corners.
         for i in 0..n {
             for j in 0..m {
-                fsd.corners[(i,j)] = ps[i].distance(qs[j]) < eps + 0.5 * EPS;
+                fsd.corners[(i,j)] = ps[i].distance(qs[j]) < eps;
             }
         }
 
@@ -265,6 +267,7 @@ impl FSD {
         let fsd = self;
         let n = fsd.n;
         let m = fsd.m;
+        assert!(!fsd.is_rsd); // Sanity check: Check it is already an RSD.
         let mut rsd = FSD::empty(n, m);
         rsd.is_rsd = true;
 
@@ -317,6 +320,7 @@ impl FSD {
     }
 
     /// Check for a partial curve match. 
+    /// 
     /// Note: Should be appied to a reachability-space diagram.
     pub fn check_pcm(&self) -> bool {
         let rsd = if self.is_rsd { self } else { &self.to_rsd() };
@@ -324,6 +328,7 @@ impl FSD {
     }
 
     /// Compute steps to walk along curves for partial matching solution.
+    /// 
     /// Note: Should be appied to a reachability-space diagram.
     pub fn pcm_steps(&self) -> Result<Option<Vec<(f64,f64)>>, String> {
 
