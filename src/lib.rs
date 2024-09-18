@@ -767,4 +767,18 @@ pub fn partial_curve_graph(graph: &Graph, ps: Curve, eps: f64) -> Result<Option<
 pub mod prelude {   
     pub use crate::{OptLineBoundary, LineBoundary, Vector, FSD, partial_curve, EPS, Curve, Graph, partial_curve_graph, make_graph};
 }
+
+#[test]
+fn test_taking_path_works() {
+    let p1 = Vector::new(0., 0.); 
+    let p2 = Vector::new(0.5, 0.5);
+    let p3 = Vector::new(1., 1.); 
+    let ps = vec![p1, p3];
+    let vertices = vec![(1, p1), (2, p2), (3, p3)];
+    let edges = vec![(1,2), (2,3)];
+    let graph = Graph::new(vertices, edges);
+    let result = partial_curve_graph(&graph, ps, 0.01).unwrap();
+    assert!(result.is_some());
+    let result = result.unwrap();
+    assert_eq!(result, vec![1, 2, 3]);
 }
