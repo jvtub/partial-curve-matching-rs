@@ -7,7 +7,7 @@ use std::collections::BTreeMap as Map;
 use std::collections::BTreeSet as Set;
 use std::iter::zip;
 pub const EPS: f64 = 0.00001;
-const DEBUG: bool = true;
+const DEBUG: bool = false;
 
 // ==============
 // === Vector ===
@@ -628,18 +628,20 @@ pub fn propagate_cell_reachability(bottom: OptLineBoundary, left: OptLineBoundar
 
 
 /// Convert an FSD into an RSD.
-pub fn fsd_to_rsd(mut fsd: FSD2) -> FSD2 {
+pub fn fsd_to_rsd(mut fsd: FSD2, propagate: bool) -> FSD2 {
     
     let m = fsd_height(&fsd);
     let n = fsd_width(&fsd);
 
     // Initiate bottom row. (Leave left boundary untouched, because we do PCM.)
-    fsd = propagate_bottom_row(fsd);
+    if propagate {
+        fsd = propagate_bottom_row(fsd);
 
-    if DEBUG {
-        println!("fsd with bottom row propagated:");
-        print_fsd(&fsd);
-        println!("");
+        if DEBUG {
+            println!("fsd with bottom row propagated:");
+            print_fsd(&fsd);
+            println!("");
+        }
     }
 
     // Walk cells from left to right, bottom to top, and propagate reachability within cell boundaries.
@@ -712,7 +714,7 @@ pub fn partial_curve_graph(graph: &Graph, ps: Curve, eps: f64) -> Result<Option<
             let eid: EID = (i, j);
             let fsd = compute_fsd(ps.clone(), graph.curvature(eid), eps);
             FDijs.insert(eid, fsd.clone());
-            let rsd = fsd_to_rsd(fsd);
+            let rsd = fsd_to_rsd(fsd, true);
             if rsd[0][n-1][1].is_some() { // Non-empty right boundary found.
                 return Ok(Some(vec![i, j]));
             }
@@ -780,6 +782,8 @@ pub fn partial_curve_graph(graph: &Graph, ps: Curve, eps: f64) -> Result<Option<
             }
 
             // Walk from left to right and update rsd.
+            let rsd = fsd_to_rsd(fsd, false);
+
             if DEBUG {
                 println!("rsd:");
                 print_fsd(&rsd);
