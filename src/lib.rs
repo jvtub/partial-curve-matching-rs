@@ -5,7 +5,9 @@ use pyo3::{exceptions::PyTypeError, prelude::*};
 use serde_derive::{Deserialize, Serialize};
 use std::collections::BTreeMap as Map;
 use std::collections::BTreeSet as Set;
+use std::iter::zip;
 pub const EPS: f64 = 0.00001;
+const DEBUG: bool = true;
 
 // ==============
 // === Vector ===
@@ -510,12 +512,15 @@ impl Graph {
         Graph { nodes, adj }
     }
 
+
+    /// Extract the curvature of an edge (which is just a single line segment for this vectorized graph).
     pub fn curvature(&self, uv: EID) -> Curve {
         let (u, v) = uv;
         vec![self.nodes[&u], self.nodes[&v]]
     }
 
 }
+
 
 /// Compute FSD out of two curves (first curve on horizontal axis, second curve on vertical axis).
 pub fn compute_fsd(ps: Curve, qs: Curve, eps: f64) -> FSD2 {
@@ -631,6 +636,12 @@ pub fn fsd_to_rsd(mut fsd: FSD2) -> FSD2 {
     // Initiate bottom row. (Leave left boundary untouched, because we do PCM.)
     fsd = propagate_bottom_row(fsd);
 
+    if DEBUG {
+        println!("fsd with bottom row propagated:");
+        print_fsd(&fsd);
+        println!("");
+    }
+
     // Walk cells from left to right, bottom to top, and propagate reachability within cell boundaries.
     for y in 0..m-1 {
         for x in 0..n-1 {
@@ -717,7 +728,6 @@ pub fn partial_curve_graph(graph: &Graph, ps: Curve, eps: f64) -> Result<Option<
     let mut totalcount = 0;
     while queue.len() > 0 {
         let (path, top) = queue.pop().unwrap();
-        // println!("Checking path: {path:?}.");
         let i = path.last().unwrap().clone();
 
         // Seek adjacent vertices which have not been visited yet.
@@ -727,9 +737,29 @@ pub fn partial_curve_graph(graph: &Graph, ps: Curve, eps: f64) -> Result<Option<
         // If we can reach next element, make walk (add new vertex to path).
         for j in adjacents.clone() {
             totalcount += 1;
-
+            let mut path = path.clone();
+            path.push(j); 
             let eid: (usize, usize) = (i, j);
+
+            if DEBUG {
+                println!("Checking path: {path:?} at edge {eid:?}.");
+                // Print relevant edges.
+                for (u, v) in zip(&path, &path[1..]) {
+                    let _eid = (*u, *v);
+                    let _fsd = FDijs.get(&_eid).unwrap();
+                    println!("edge {_eid:?}:");
+                    print_fsd(_fsd);
+                    println!("");
+                }
+            }
+
             let mut fsd = FDijs.get(&eid).unwrap().clone();
+
+            if DEBUG {
+                println!("fsd initially:");
+                print_fsd(&fsd);
+                println!("");
+            }
 
             // Sanity: Check top of RSD is a subset of bottom of FSD.
             for x in 0..fsd_width(&fsd) {
@@ -743,10 +773,18 @@ pub fn partial_curve_graph(graph: &Graph, ps: Curve, eps: f64) -> Result<Option<
                 fsd[0][x][0] = top[x];
             }           
 
+            if DEBUG {
+                println!("fsd with bottom of rsd:");
+                print_fsd(&fsd);
+                println!("");
+            }
+
             // Walk from left to right and update rsd.
-            let rsd = fsd_to_rsd(fsd);
-            let mut path = path.clone();
-            path.push(j); 
+            if DEBUG {
+                println!("rsd:");
+                print_fsd(&rsd);
+                println!("");
+            }
 
             if rsd[0][n-1][1].is_some() { // Non-empty right boundary found.
                 return Ok(Some(path));
@@ -781,4 +819,46 @@ fn test_taking_path_works() {
     assert!(result.is_some());
     let result = result.unwrap();
     assert_eq!(result, vec![1, 2, 3]);
+}
+
+
+/// Print OptLineBoundary (for debugging purposes).
+fn print_lb(opt_lb : OptLineBoundary) {
+    if opt_lb.is_none() {
+        print!("(     -     )");
+    } else {
+        let LineBoundary { a, b } = opt_lb.unwrap();
+        print!("({a:.2} - {b:.2})");
+    }
+}
+
+
+/// Print FSD2 (for debugging purposes).
+fn print_fsd(fsd: &FSD2) {
+    let n = fsd_width(fsd);
+    let m = fsd_height(fsd);
+    let offset = 11;
+    // (0..10).rev()
+    for y in (0..m).rev() {
+        for a in [1, 0] {
+            if a == 0 {
+                print!("             "); // 13
+            }
+            for x in 0..n {
+                // let mut space = String::from("");
+                // for i in 0..10*x {
+                //     space.push_str(" ");
+                // }
+                // if a == 1 {
+                //     for i in 0..5 {
+                //         space.push_str(" ");
+                //     }
+                // }
+                // print!("{space}.");
+                print_lb(fsd[y][x][a]);
+                print!("             "); // 13
+            }
+            println!();
+        }
+    }
 }
