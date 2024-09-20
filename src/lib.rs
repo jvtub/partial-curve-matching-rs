@@ -1,4 +1,6 @@
 #![feature(let_chains)]
+use std::cmp::{Ordering, Reverse};
+use std::collections::{BinaryHeap, VecDeque};
 use std::ops::{Add, Div, Mul, Sub};
 use ndarray::{prelude::*, OwnedRepr};
 use pyo3::{exceptions::PyTypeError, prelude::*};
@@ -13,7 +15,7 @@ const DEBUG: bool = false;
 // === Vector ===
 // ==============
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 #[pyclass]
 pub struct Vector {
     pub x: f64,
@@ -472,7 +474,8 @@ pub fn partial_curve(ps: Curve, qs: Curve, eps: f64) -> Result<Option<(f64, f64)
 type NID = usize;
 
 /// Edge identifier.
-type EID = (usize, usize);
+type NIDPair = (usize, usize);
+type EID = usize;
 
 /// Alternative, simplified datastructure for Free-Space Diagram.
 /// 
@@ -486,19 +489,59 @@ type Path = Vec<NID>;
 #[pyclass]
 pub struct Graph {
     /// Nodes with (x,y) coordinate.
-    nodes: Map<NID, Vector>,
+    // nodes: Map<NID, Vector>,
     /// Adjacent nodes.
-    adj: Map<NID, Set<NID>> 
+    adj: Map<NID, Set<NID>> ,
+
+    /// List NIDs in graph.
+    /// 
+    /// Note: Since fixed position in vector this functions as a index as well.
+    nid_list: Vec<NID>,
+    /// Back-link for NIDs.
+    nid_map: Map<NID, usize>,
+    /// Node vectors.
+    vec_list: Vec<Vector>,
+
+    /// Back-link for EIDs.
+    eid_map: Map<NIDPair, EID>,
+    /// Map edge to unique identifier.
+    /// 
+    /// Note:  Since fixed position in vector this functions as a index as well.
+    eid_list: Vec<NIDPair>,
 }
 
 impl Graph {
 
     /// Store a graph struct, re-used as we apply to different curves.
     pub fn new(vertices: Vec<(NID, Vector)>, edges: Vec<(NID, NID)>) -> Self {
-        let mut nodes = Map::new();
-        for (i, v) in vertices {
-            nodes.insert(i, v);
+
+        // Construct node information.
+        let mut nid_list = Vec::new();
+        let mut vec_list = Vec::new();
+        let mut nid_map = Map::new();
+        let mut i = 0;
+        for (j, v) in &vertices {
+            nid_list.push(j.clone());
+            vec_list.push(v.clone());
+            nid_map.insert(j.clone(), i);
+            i += 1;
         }
+        
+        // Sanity check on NID backlink.
+        assert_eq!(nid_list.len(), nid_map.len());
+        for i in 0..nid_list.len() { 
+            let nid = nid_list[i];
+            assert_eq!(nid, *nid_map.get(&nid).unwrap());
+        }
+
+        // Sanity check on NID vectors.
+        assert_eq!(nid_list.len(), vec_list.len());
+        for (nid, v) in &vertices {
+            let i = *nid_map.get(nid).unwrap();  
+            assert_eq!(*v, vec_list[i]);
+        }
+
+        // Construct adjacency map.
         let mut adj: Map<NID, Set<NID>> = Map::new();
         for (u, v) in edges {
 
@@ -509,44 +552,29 @@ impl Graph {
             adj.get_mut(&v).unwrap().insert(u);
 
         }
-        Graph { nodes, adj }
-    }
 
-
-    /// Extract the curvature of an edge (which is just a single line segment for this vectorized graph).
-    pub fn curvature(&self, uv: EID) -> Curve {
-        let (u, v) = uv;
-        vec![self.nodes[&u], self.nodes[&v]]
-    }
-
-}
-
-
-/// Compute FSD out of two curves (first curve on horizontal axis, second curve on vertical axis).
-pub fn compute_fsd(ps: Curve, qs: Curve, eps: f64) -> FSD2 {
-
-    let n = ps.len();
-    let m = qs.len();
-    let mut fsd = vec![];
-    for y in 0..m {
-        let mut row = vec![];
-        for x in 0..n {
-            let horizontal = if x == n - 1 { 
-                None
-            } else {
-                LineBoundary::compute(qs[y], ps[x], ps[x+1], eps)
-            };
-            let vertical = if y == m - 1 {
-                None
-            } else {
-                LineBoundary::compute(ps[x], qs[y], qs[y+1], eps)
-            };
-            row.push(vec![horizontal, vertical]);
+        // Construct edge information.
+        let mut eid_list = Vec::new();
+        let mut eid_map = Map::new();
+        let mut i = 0;
+        for u in adj.keys() {
+            for v in adj.get(u).unwrap() {
+                eid_list.push((*u, *v));
+                eid_map.insert((*u, *v), i);
+                i += 1;
+            }
         }
-        fsd.push(row);
+
+        // Sanity check edge information.
+        for i in 0..eid_list.len() {
+            let eid = eid_list[i];
+            assert_eq!(i, *eid_map.get(&eid).unwrap());
+        }
+
+        Graph { nid_list, nid_map, vec_list, adj, eid_list, eid_map }
     }
 
-    fsd
+
 }
 
 
@@ -702,127 +730,341 @@ pub fn make_graph(vertices: Vec<(NID, Vector)>, edges: Vec<(NID, NID)>) -> Graph
 /// 
 /// todo (optimization): Lazily evaluate FDij's, initiate by checking solely the left boundary of every FDij.
 #[pyfunction]
-// pub fn compute(graph: Graph, ps: Curve, eps: f64) -> Result<Option<Vec<NID>>, String> {
-pub fn partial_curve_graph(graph: &Graph, ps: Curve, eps: f64) -> Result<Option<Vec<NID>>, PyErr> {
+pub fn partial_curve_graph(graph: &Graph, curve: Curve, eps: f64) -> Result<Option<Vec<NID>>, PyErr> {
+    let n = curve.len();
+    // Map eid to vector index (such as used for FDu, for which having a set is problematic (a technically)).
 
-    // Initiate FDij's and initial reachable paths.
-    let mut FDijs : Map<EID, FSD2> = Map::new();
-    let mut queue : Vec<(Path, Vec<OptLineBoundary>)> = vec![];
-    let n = ps.len();
-    for (i, js) in graph.adj.clone() { // Iterate all edges.
-        for j in js { // These are all the possible starting points we could have.
-            let eid: EID = (i, j);
-            let fsd = compute_fsd(ps.clone(), graph.curvature(eid), eps);
-            FDijs.insert(eid, fsd.clone());
-            let rsd = fsd_to_rsd(fsd, true);
-            if rsd[0][n-1][1].is_some() { // Non-empty right boundary found.
-                return Ok(Some(vec![i, j]));
-            }
-            if !is_top_empty(&rsd) { // If we can reach top, we can increment and check next element.
-                // Push horizontal top line segment.
-                // We are able to start at this edge for pcm curve matching. Initiate queue for evaluation.
-                queue.push((vec![i, j], extract_top(&rsd)));
-            }
+    // Free-Space Lines. (Per node do we have a one-dimensional line.)
+    let mut FDus: Vec<Vec<OptLineBoundary>> = vec![];
+    for u in 0..graph.nid_list.len() {
+        // Construct FDu.
+        let mut FDu = vec![];
+        for i in 0..n-1 {
+            // Construct.
+            let p = graph.vec_list[u];
+            let q0 = curve[i];
+            let q1 = curve[i+1];
+            let lb = LineBoundary::compute(p, q0, q1, eps);
+            FDu.push(lb);
         }
+        FDus.push(FDu);
     }
+    // todo: Sanity check FDu's.
+    
+    // Shortcut Pointers. (Per node (per FDu) we have backward and forward shortcut pointers.)
+    let mut SPus: Vec<Vec<(Option<usize>, Option<usize>)>> = vec![];
+    for u in 0..graph.nid_list.len() {
 
-    // Per starting point, walk till we find a feasible path.
-    let mut totalcount = 0;
-    while queue.len() > 0 {
-        let (path, top) = queue.pop().unwrap();
-        let i = path.last().unwrap().clone();
+        // Construct SPu.
+        let mut SPu = vec![];
+        let FDu = &FDus[u];
+        let mut i = 0;
+        let mut k = 0;
+        for j in 0..n {
 
-        // Seek adjacent vertices which have not been visited yet.
-        let adjacents = graph.adj.get(&i).unwrap().clone();
-        let adjacents: Vec<NID> = adjacents.into_iter().filter(|&v| !path.contains(&v)).collect();
-
-        // If we can reach next element, make walk (add new vertex to path).
-        for j in adjacents.clone() {
-            totalcount += 1;
-            let mut path = path.clone();
-            path.push(j); 
-            let eid: (usize, usize) = (i, j);
-
-            if DEBUG {
-                println!("Checking path: {path:?} at edge {eid:?}.");
-                // Print relevant edges.
-                for (u, v) in zip(&path, &path[1..]) {
-                    let _eid = (*u, *v);
-                    let _fsd = FDijs.get(&_eid).unwrap();
-                    println!("edge {_eid:?}:");
-                    print_fsd(_fsd);
-                    println!("");
+            // Walk k to next non-empty.
+            if j == k { 
+                while k < n && FDu[k].is_none() {
+                    k += 1;
                 }
             }
 
-            let mut fsd = FDijs.get(&eid).unwrap().clone();
-
-            if DEBUG {
-                println!("fsd initially:");
-                print_fsd(&fsd);
-                println!("");
+            // Set index.
+            let mut opt_left = None;
+            let mut opt_right = None;
+            if j > 0 && FDu[i].is_some() { // Use is_some since index 0 may be empty.
+                opt_left = Some(i);
+            }
+            if k < n {
+                opt_right = Some(k);
+            }
+            
+            // Walk i to current non-empty.
+            if FDu[j].is_some() { 
+                i = j;
             }
 
-            // Sanity: Check top of RSD is a subset of bottom of FSD.
-            for x in 0..fsd_width(&fsd) {
-                let fsd_bot = fsd[0][x][0];
-                let rsd_top = top[x];
-                assert!(lb_is_subset(fsd_bot, rsd_top));
+            SPu.push((opt_left, opt_right));
+        }
+        SPus.push(SPu);
+    }
+    // todo: Sanity check SPu's.
+    if sanity_check {
+
+    }
+
+    // Reachability Pointers. 
+    let mut RPuvs = vec![];
+    // The problem with our reachability pointers is the assumption we start at the bottom of the cell.
+    // If we start on the left boundary, we may not walk that far to the right.
+    let mut RPuv0s = vec![];
+    for (u, v) in &graph.eid_list {
+
+        let u = *graph.nid_map.get(u).unwrap();
+        let v = *graph.nid_map.get(v).unwrap();
+        
+        // First construct spikes.
+        let mut ais = vec![1.]; // Lower spike. Initiate first to non-existent.
+        let mut bis = vec![0.]; // Upper spike.
+        for i in 1..n { // Do it up to n (relevant for partial curve matching).
+            let p = curve[i];
+            let q0 = graph.vec_list[u];
+            let q1 = graph.vec_list[v];
+            if let Some(LineBoundary { a, b }) = LineBoundary::compute(p, q0, q1, eps) {
+                ais.push(a);
+                bis.push(b);
+            } else {
+                ais.push(1.);
+                bis.push(0.);
+            }
+        }
+
+        // Construct RCuv. (Reachable Cell index in v starting at bottom of u.)
+        let mut RCuv = vec![];
+        let mut RPuv0 = None;
+        let mut S: VecDeque<(usize, f64)> = VecDeque::new(); // Partial maximum stack. Initiate with top at the left boundary.
+        for i in 1..n { // Checking first index is useless.
+            let m = S.len();
+            let ai = ais[i];
+            let bi = bis[i];
+            
+            if ais[0] < 1. && RPuv0.is_none() && bi < ais[0] {
+                RPuv0 = Some((0, i - 1));
             }
 
-            // Update bottom of fsd to top of rsd.
-            for x in 0..n { 
-                fsd[0][x][0] = top[x];
-            }           
-
-            if DEBUG {
-                println!("fsd with bottom of rsd:");
-                print_fsd(&fsd);
-                println!("");
+            // Check for a cutoff and directly clean up stack.
+            let mut _s = None;
+            while bi < S.back().unwrap_or(&(0, 0.)).1 {
+                _s = S.pop_back();
             }
 
-            // Walk from left to right and update rsd.
-            let rsd = fsd_to_rsd(fsd, false);
-
-            if DEBUG {
-                println!("rsd:");
-                print_fsd(&rsd);
-                println!("");
+            // Push the reachability index till the cutoff point.
+            if let Some((l, al)) = _s {
+                while RCuv.len() < l {
+                    RCuv.push(i - 1);
+                }
             }
 
-            if rsd[0][n-1][1].is_some() { // Non-empty right boundary found.
+            // Update local maximum pointer.
+            while ai >= S.front().unwrap_or(&(0, 1.)).1 {
+                S.pop_front();
+            }
+            S.push_front((i, ai));
+        }
+        // Push remaining values.
+        while RCuv.len() < n {
+            RCuv.push(n);
+        }
+        RPuv0s.push(RPuv0);
+
+        // Sanity check RCuv.
+        assert_eq!(RCuv.len(), n);
+
+        // Construct Jls.
+        let mut Jls = vec![];
+        for i in 0..n {
+            if FDus[u][i].is_some() {
+                Jls.push(Some(i));
+            } else if let Some(l) = SPus[v][i].1 && l <= RCuv[i] {
+                Jls.push(Some(l));
+            } else {
+                Jls.push(None);
+            }
+        }
+
+        // Construct Jrs.
+        let mut Jrs = vec![];
+        for i in 0..n {
+            let l = RCuv[i];
+            if FDus[v][l].is_some() {
+                Jrs.push(Some(l));
+            } else if let Some(k) = SPus[v][i].0 && k >= i && k <= l {
+                Jrs.push(Some(k));
+            } else {
+                Jrs.push(None);
+            }
+        }
+
+        let mut RPuv = vec![];
+        for (Jl, Jr) in zip(Jls, Jrs) {
+            // Sanity check that either both let and right exist or neither do.
+            assert_eq!(Jl.is_some(), Jr.is_some());
+            RPuv.push(if Jl.is_none() {
+                None
+            } else {
+                Some((Jl.unwrap(), Jr.unwrap()))
+            });
+        }
+        RPuvs.push(RPuv);
+    }
+
+    // Sweep line.
+    // Initialize event buckets.
+    let mut event_buckets = vec![];
+    for i in 0..n {
+        // Note how we use a reversed since we want to pop lowest a's first (we sweep from left to right).
+        let bucket: BinaryHeap<Reverse<PathPointer>> = BinaryHeap::new();
+        event_buckets.push(bucket);
+    }
+
+    // Initiate with non-empty left boundaries.
+    for (eid, (u, v)) in graph.eid_list.iter().enumerate() {
+        let u = *graph.nid_map.get(u).unwrap();
+        let v = *graph.nid_map.get(v).unwrap();
+        let _eid = *graph.eid_map.get(&(u, v)).unwrap();
+        assert_eq!(eid, _eid);
+        let p = curve[0];
+        let q0 = graph.vec_list[u];
+        let q1 = graph.vec_list[v];
+        if let Some((_, k)) = RPuv0s[eid] {
+            if k == n {
+                let mut path = vec![u, v];
                 return Ok(Some(path));
             }
 
-            if !is_top_empty(&rsd) {
-                // If not empty we push it to the stack.
-                queue.push((path, extract_top(&rsd)));
+            for i in 0..=k {
+                if let Some(LineBoundary { a, b }) = FDus[v][i] {
+                    // Push entire interval.
+                    let mut bucket = event_buckets.get_mut(i).unwrap();
+                    bucket.push(Reverse(PathPointer { a, from: vec![u], curr: v }));
+                }
             }
         }
     }
-    println!("Total paths checkted: {totalcount}");
+
+    // Start sweeping!
+    let mut run = true;
+    let mut i = 0;
+    let mut x = 0.; // for sanity checking
+    let mut evicted = Set::new(); // Tracking evicted NIDs to prevent pushing back nodes onto the current event bucket which have already been processed for the current interval.
+    while i < n { // Loop is called after every FDuv interval processed or an empty event buffer occurring.
+
+        // Obtain next event for our sweep line.
+        let opt_pathpointer = {
+            let current_bucket = event_buckets.get_mut(i).unwrap();
+            if current_bucket.is_empty() { // We have to check next bucket.
+                i += 1; // Continue to next curve interval.
+                evicted = Set::new(); // Thrash evicted nodes for new event bucket.
+                None
+            } else {
+                Some(current_bucket.pop().unwrap().0)
+            }
+        };
+
+        if opt_pathpointer.is_none() {
+            continue;
+        }
+
+        // Take out a lowest value.
+        let PathPointer { a, from, curr } = opt_pathpointer.unwrap();
+
+        // Sanity check we are sweeping upwards.
+        assert!(x <= i as f64 + a);
+        x = i as f64 + a;
+
+        // Try to walk to adjacents
+        //                                             left reachable                        right reachable                 
+        //                                             index top                             index top                         
+        //                                                   j                                     k                               
+        //    .------------------.- - - - - - - - - .------------------.- - - - - - - - - .------------------.
+        //    |                  |                  |                  |                  |                  |
+        //    |                  |                  |                  |                  |                  |
+        //    |                  |                  |                  |                  |                  |
+        //    .------------------.- - - - - - - - - .------------------.- - - - - - - - - .------------------.
+        //              i
+        //      curr index bottom
+        // 
+        let u = curr;
+        evicted.insert(u);
+        for v in graph.adj.get(&u).unwrap().clone() {
+            let eid = graph.eid_map.get(&(u, v)).unwrap().clone();
+            let RPuv = RPuvs[eid][i];
+            if RPuv.is_none() {
+                continue;
+            }
+
+            let (j, k) = RPuv.unwrap();
+
+            // todo improve logic flow here below.
+
+            // Obtain top left directly alongside offset (which can be shifted to the right due to starting interval at bottom).
+            let top_left_with_offset = if j == i { 
+                let top = FDus[v][i].unwrap();
+                if top.b >= a {
+                    Some((i, a.max(top.a)))
+                } else if let Some(j) = SPus[v][i].1 && j <= k { // We must traverse to the right.
+                    let top = FDus[v][j].unwrap();
+                    Some((j, top.a))
+                } else { 
+                    None
+                }
+            } else { // We walk at least one cell to the right so we can just pick the start of this index.
+                let top = FDus[v][j].unwrap();
+                Some((j, top.a))
+            };
+
+            let top_right = if top_left_with_offset.is_none() {
+                // Sanity check.
+                assert!(SPus[v][k].0.is_none() || SPus[v][k].0.unwrap() < i || (SPus[v][k].0.unwrap() == i && FDus[v][i].unwrap().b < a));
+                None
+            } else {
+                // Start at final index and walk left till we find something.
+                if FDus[v][k].is_some() {
+                    Some(k)
+                } else {
+                    let k = SPus[v][k].0.unwrap();
+                    assert!(k >= i);
+                    Some(k)
+                }
+            };
+
+            if let Some(k) = top_right && k == n {
+                let mut path = from.clone();
+                path.push(v);
+                return Ok(Some(path));
+            }
+
+            // Create new sweep line events.
+            if top_left_with_offset.is_some() {
+                let (j, a) = top_left_with_offset.unwrap();
+                let k = top_right.unwrap();
+
+                // Push top left.
+                if j == i && evicted.contains(&v) { // Only add if we haven't evicted already in current event bucket interval.
+
+                } else {
+                    let bucket = event_buckets.get_mut(j).unwrap();
+                    let extracted = extract_bucket_nid(bucket, v);
+                    if let Some(path_pointer) = extracted {
+                        if path_pointer.a <= a { // Ignore our just created event (reinsert old one).
+                            bucket.push(Reverse(path_pointer));
+                        } else { // Add our event (overwrite previously stored), because a is lower.
+                            let mut _from = from.clone();
+                            _from.push(u);
+                            bucket.push(Reverse(PathPointer { a, from: _from, curr: v }));
+                        }
+                    }
+                }
+
+                // Iterate onwards.
+                for l in j+1..=k  {
+                    let a = FDus[v][l].unwrap().a;
+                    let bucket = event_buckets.get_mut(j).unwrap();
+                    let extracted = extract_bucket_nid(bucket, v);
+                    if let Some(path_pointer) = extracted {
+                        assert_eq!(path_pointer.a, a);
+                        bucket.push(Reverse(path_pointer)); // Ignore our just created event (reinsert old one).
+                    } else {
+                        let mut _from = from.clone();
+                        _from.push(u);
+                        event_buckets.get_mut(l).unwrap().push(Reverse(PathPointer { a, from: _from, curr: v }));
+                    }
+                }
+            }
+        }
+    }
 
     Ok(None)
-}
-
-
-pub mod prelude {   
-    pub use crate::{OptLineBoundary, LineBoundary, Vector, FSD, partial_curve, EPS, Curve, Graph, partial_curve_graph, make_graph};
-}
-
-#[test]
-fn test_taking_path_works() {
-    let p1 = Vector::new(0., 0.); 
-    let p2 = Vector::new(0.5, 0.5);
-    let p3 = Vector::new(1., 1.); 
-    let ps = vec![p1, p3];
-    let vertices = vec![(1, p1), (2, p2), (3, p3)];
-    let edges = vec![(1,2), (2,3)];
-    let graph = Graph::new(vertices, edges);
-    let result = partial_curve_graph(&graph, ps, 0.01).unwrap();
-    assert!(result.is_some());
-    let result = result.unwrap();
-    assert_eq!(result, vec![1, 2, 3]);
 }
 
 
@@ -865,4 +1107,134 @@ fn print_fsd(fsd: &FSD2) {
             println!();
         }
     }
+}
+
+
+/// Convert a Free-Space Diagram boundary into a Shortcut Pointer list.
+fn free_space_line_to_shortcut_pointers_next(FDi: Vec<OptLineBoundary>) -> Vec<(Option<NID>, Option<NID>)> {
+    // todo
+    vec![]
+}
+
+
+fn free_space_row_into_reachable_interval(FDij: FSD2) -> Vec<(Option<NID>, Option<NID>)> {
+    // todo
+    vec![]
+}
+
+
+const sanity_check: bool = true;
+
+// Construct FDi.
+// Construct SPi.
+// Construct RPij.
+// Construct RIij.
+// Initiate Ci's and sweep line, maintain Ci's while sweeping to the right.
+
+
+/// Ordered sweep line events to process while traversing the reachable points in the Free-Space Surface.
+type EventBucket = BinaryHeap<Reverse<PathPointer>>;
+
+fn does_bucket_contain_nid(bucket: BinaryHeap<Reverse<PathPointer>>, nid: usize) -> bool {
+    bucket.into_vec().iter().any(|Reverse(PathPointer { a, from, curr })| *curr == nid)
+}
+
+/// Extract PathPointer from the EventBucket if such exists with specified nid.
+/// 
+/// Note: Quite inefficient because we fully reconstruct the bucket (which concerns ordering when pushing).
+fn extract_bucket_nid(bucket: &mut EventBucket, nid: usize) -> Option<PathPointer> {
+    let mut reinsert = vec![];
+    let mut extracted = None;
+    while let Some(Reverse(pathpointer)) = bucket.pop() {
+        if pathpointer.curr != nid {
+            reinsert.push(Reverse(pathpointer));
+        } else {
+            extracted = Some(pathpointer);
+        }
+    }
+    for element in reinsert {
+        bucket.push(element);
+    }
+    extracted
+}
+
+
+/// Pointer living at FDu within the event bucket i.
+/// When sweeping we send 
+#[derive(Clone)]
+struct PathPointer {
+    /// This is the offset which could be endorsed by the bottom interval if it propagates to the same cell.
+    a: f64,
+    /// The walk started from some vertex and some curve interval (we don't care from what curve interval, we only care for reconstructing path).
+    from: Vec<NID>,
+    /// The current index we walk to.
+    curr: NID,
+}
+
+impl PartialEq for PathPointer {
+    fn eq(&self, other: &Self) -> bool {
+        self.a == other.a
+    }
+}
+
+impl Eq for PathPointer {
+
+}
+
+impl PartialOrd for PathPointer {
+    fn ge(&self, other: &Self) -> bool {
+        self.a >= other.a
+    }
+    fn gt(&self, other: &Self) -> bool {
+        self.a > other.a
+    }
+    fn le(&self, other: &Self) -> bool {
+        self.a <= other.a
+    }
+    fn lt(&self, other: &Self) -> bool {
+        self.a < other.a
+    }
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        if self.a < other.a {
+            Some(Ordering::Less)
+        } else if self.a > other.a {
+            Some(Ordering::Greater)
+        } else {
+            Some(Ordering::Equal)
+        }
+    }
+}
+
+impl Ord for PathPointer {
+    fn cmp(&self, other: &Self) -> Ordering {
+        if self.a < other.a {
+            Ordering::Less
+        } else if self.a > other.a {
+            Ordering::Greater
+        } else {
+            Ordering::Equal
+        }
+    }
+}
+
+
+pub mod prelude {   
+    pub use crate::{OptLineBoundary, LineBoundary, Vector, FSD, partial_curve, EPS, Curve, Graph, partial_curve_graph, make_graph};
+}
+
+
+
+#[test]
+fn test_taking_path_works() {
+    let p1 = Vector::new(0., 0.); 
+    let p2 = Vector::new(0.5, 0.5);
+    let p3 = Vector::new(1., 1.); 
+    let ps = vec![p1, p3];
+    let vertices = vec![(1, p1), (2, p2), (3, p3)];
+    let edges = vec![(1,2), (2,3)];
+    let graph = Graph::new(vertices, edges);
+    let result = partial_curve_graph(&graph, ps, 0.01).unwrap();
+    assert!(result.is_some());
+    let result = result.unwrap();
+    assert_eq!(result, vec![1, 2, 3]);
 }
