@@ -735,15 +735,16 @@ pub fn make_graph(vertices: Vec<(NID, Vector)>, edges: Vec<(NID, NID)>) -> Graph
 /// todo (optimization): Lazily evaluate FDij's, initiate by checking solely the left boundary of every FDij.
 #[pyfunction]
 pub fn partial_curve_graph(graph: &Graph, curve: Curve, eps: f64) -> Result<Option<Vec<NID>>, PyErr> {
-    let n = curve.len();
+    let n = curve.len() - 1; // Number of intervals.
     // Map eid to vector index (such as used for FDu, for which having a set is problematic (a technically)).
 
     // Free-Space Lines. (Per node do we have a one-dimensional line.)
+    println!("Computing FDus.");
     let mut FDus: Vec<Vec<OptLineBoundary>> = vec![];
     for u in 0..graph.nid_list.len() {
         // Construct FDu.
         let mut FDu = vec![];
-        for i in 0..n-1 {
+        for i in 0..n {
             // Construct.
             let p = graph.vec_list[u];
             let q0 = curve[i];
@@ -751,13 +752,30 @@ pub fn partial_curve_graph(graph: &Graph, curve: Curve, eps: f64) -> Result<Opti
             let lb = LineBoundary::compute(p, q0, q1, eps);
             FDu.push(lb);
         }
-        FDu.push(None); // Non-existing FDu past the final curve interval.
-        assert_eq!(FDu.len(), n);
+
+        if sanity_check {
+            assert_eq!(FDu.len(), n);
+
+            // If we have at index i a value of b == 1., expect to have a == 0. at index i + 1;
+            for i in 0..n {
+                if let Some(LineBoundary { a, b }) = FDu[i] && b == 1. && i < n - 1{
+                    assert_eq!(FDu[i + 1].unwrap().a, 0.);
+                }
+            }
+            // Similarly for the reverse.
+            for i in (0..n).rev() {
+                if let Some(LineBoundary { a, b }) = FDu[i] && b == 0. && i > 0 {
+                    assert_eq!(FDu[i - 1].unwrap().b, 1.);
+                }
+            }
+
+        }
+
         FDus.push(FDu);
     }
-    // todo: Sanity check FDu's.
-    
+
     // Shortcut Pointers. (Per node (per FDu) we have backward and forward shortcut pointers.)
+    println!("Computing SPus.");
     let mut SPus: Vec<Vec<(Option<usize>, Option<usize>)>> = vec![];
     for u in 0..graph.nid_list.len() {
 
@@ -765,13 +783,13 @@ pub fn partial_curve_graph(graph: &Graph, curve: Curve, eps: f64) -> Result<Opti
         let mut SPu = vec![];
         let FDu = &FDus[u];
         let mut i = 0;
-        let mut k = 0;
+        let mut l = 0;
         for j in 0..n {
 
-            // Walk k to next non-empty.
-            if j == k { 
-                while k < n && FDu[k].is_none() {
-                    k += 1;
+            // Walk l to next non-empty.
+            if j == l { 
+                while l < n && FDu[l].is_none() {
+                    l += 1;
                 }
             }
 
@@ -781,8 +799,8 @@ pub fn partial_curve_graph(graph: &Graph, curve: Curve, eps: f64) -> Result<Opti
             if j > 0 && FDu[i].is_some() { // Use is_some since index 0 may be empty.
                 opt_left = Some(i);
             }
-            if k < n {
-                opt_right = Some(k);
+            if l < n {
+                opt_right = Some(l);
             }
             
             // Walk i to current non-empty.
@@ -792,13 +810,39 @@ pub fn partial_curve_graph(graph: &Graph, curve: Curve, eps: f64) -> Result<Opti
 
             SPu.push((opt_left, opt_right));
         }
+
+
+        // Sanity check SPu.
+        if sanity_check {
+
+            // * Expect each reference to point to actual existing point of FDu.
+            for (opt_left, opt_right) in &SPu {
+                if let Some(i) = opt_left {
+                    assert!(FDu[*i].is_some());
+                }
+                if let Some(l) = opt_right {
+                    assert!(FDu[*l].is_some());
+                }
+            }
+
+            // * Expect all non-empty intervals on FDu be referenced at least once (unless n == 1)
+            // let mut non_empty: Vec<OptLineBoundary> = FDu.clone().into_iter().enumerate().filter(|(_, opt_lb)| opt_lb.is_some()).map(|(i, _)| i)collect();
+            // let mut non_empty: Vec<usize> = FDu.clone().into_iter().enumerate().filter(|(_, opt_lb)| opt_lb.is_some()).map(|(i, _)| i).collect();
+            let mut non_empty: Vec<usize> = FDu.iter().enumerate().filter(|(_, opt_lb)| opt_lb.is_some()).map(|(i, _)| i).collect();
+            let mut non_empty = unique(non_empty);
+            for (opt_left, opt_right) in &SPu {
+                if let Some(i) = opt_left {
+                    non_empty.remove(i);
+                }
+                if let Some(l) = opt_right {
+                    non_empty.remove(l);
+                }
+            }
+            assert_eq!(non_empty.len(), 0);
+        }
+
         SPus.push(SPu);
     }
-    // todo: Sanity check SPu's.
-    if sanity_check {
-
-    }
-
     // Reachability Pointers. 
     let mut RPuvs = vec![];
     // The problem with our reachability pointers is the assumption we start at the bottom of the cell.
@@ -1243,4 +1287,14 @@ fn test_taking_path_works() {
     assert!(result.is_some());
     let result = result.unwrap();
     assert_eq!(result, vec![1, 2, 3]);
+}
+
+
+/// Extract unique elements out of a vector and store as a Set.
+fn unique<T>(elements: Vec<T>) -> Set<T> where T: Ord {
+    let mut set = Set::new();
+    for element in elements {
+        set.insert(element);
+    }
+    set
 }
