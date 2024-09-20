@@ -742,20 +742,19 @@ pub fn partial_curve_graph(graph: &Graph, curve: Curve, eps: f64) -> Result<Opti
     println!("Computing FDus.");
     let mut FDus: Vec<Vec<OptLineBoundary>> = vec![];
     for u in 0..graph.nid_list.len() {
-        // Construct FDu.
         let mut FDu = vec![];
         for i in 0..n {
-            // Construct.
             let p = graph.vec_list[u];
             let q0 = curve[i];
             let q1 = curve[i+1];
             let lb = LineBoundary::compute(p, q0, q1, eps);
             FDu.push(lb);
         }
-
-        if sanity_check {
+        FDus.push(FDu);
+    }
+    if sanity_check {
+        for FDu in &FDus {
             assert_eq!(FDu.len(), n);
-
             // If we have at index i a value of b == 1., expect to have a == 0. at index i + 1;
             for i in 0..n {
                 if let Some(LineBoundary { a, b }) = FDu[i] && b == 1. && i < n - 1{
@@ -768,31 +767,24 @@ pub fn partial_curve_graph(graph: &Graph, curve: Curve, eps: f64) -> Result<Opti
                     assert_eq!(FDu[i - 1].unwrap().b, 1.);
                 }
             }
-
         }
-
-        FDus.push(FDu);
     }
 
     // Shortcut Pointers. (Per node (per FDu) we have backward and forward shortcut pointers.)
     println!("Computing SPus.");
     let mut SPus: Vec<Vec<(Option<usize>, Option<usize>)>> = vec![];
     for u in 0..graph.nid_list.len() {
-
-        // Construct SPu.
         let mut SPu = vec![];
         let FDu = &FDus[u];
         let mut i = 0;
         let mut l = 0;
         for j in 0..n {
-
             // Walk l to next non-empty.
             if j == l { 
                 while l < n && FDu[l].is_none() {
                     l += 1;
                 }
             }
-
             // Set index.
             let mut opt_left = None;
             let mut opt_right = None;
@@ -802,21 +794,20 @@ pub fn partial_curve_graph(graph: &Graph, curve: Curve, eps: f64) -> Result<Opti
             if l < n {
                 opt_right = Some(l);
             }
-            
             // Walk i to current non-empty.
             if FDu[j].is_some() { 
                 i = j;
             }
-
             SPu.push((opt_left, opt_right));
         }
-
-
-        // Sanity check SPu.
-        if sanity_check {
-
+        SPus.push(SPu);
+    }
+    if sanity_check {
+        for u in 0..graph.nid_list.len() {
+            let SPu = &SPus[u];
+            let FDu = &FDus[u];
             // * Expect each reference to point to actual existing point of FDu.
-            for (opt_left, opt_right) in &SPu {
+            for (opt_left, opt_right) in SPu {
                 if let Some(i) = opt_left {
                     assert!(FDu[*i].is_some());
                 }
@@ -826,11 +817,9 @@ pub fn partial_curve_graph(graph: &Graph, curve: Curve, eps: f64) -> Result<Opti
             }
 
             // * Expect all non-empty intervals on FDu be referenced at least once (unless n == 1)
-            // let mut non_empty: Vec<OptLineBoundary> = FDu.clone().into_iter().enumerate().filter(|(_, opt_lb)| opt_lb.is_some()).map(|(i, _)| i)collect();
-            // let mut non_empty: Vec<usize> = FDu.clone().into_iter().enumerate().filter(|(_, opt_lb)| opt_lb.is_some()).map(|(i, _)| i).collect();
             let mut non_empty: Vec<usize> = FDu.iter().enumerate().filter(|(_, opt_lb)| opt_lb.is_some()).map(|(i, _)| i).collect();
             let mut non_empty = unique(non_empty);
-            for (opt_left, opt_right) in &SPu {
+            for (opt_left, opt_right) in SPu {
                 if let Some(i) = opt_left {
                     non_empty.remove(i);
                 }
@@ -840,8 +829,6 @@ pub fn partial_curve_graph(graph: &Graph, curve: Curve, eps: f64) -> Result<Opti
             }
             assert_eq!(non_empty.len(), 0);
         }
-
-        SPus.push(SPu);
     }
     // Reachability Pointers. 
     let mut RPuvs = vec![];
