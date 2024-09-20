@@ -751,6 +751,8 @@ pub fn partial_curve_graph(graph: &Graph, curve: Curve, eps: f64) -> Result<Opti
             let lb = LineBoundary::compute(p, q0, q1, eps);
             FDu.push(lb);
         }
+        FDu.push(None); // Non-existing FDu past the final curve interval.
+        assert_eq!(FDu.len(), n);
         FDus.push(FDu);
     }
     // todo: Sanity check FDu's.
