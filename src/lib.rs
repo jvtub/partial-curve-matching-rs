@@ -519,19 +519,20 @@ impl Graph {
         let mut nid_list = Vec::new();
         let mut vec_list = Vec::new();
         let mut nid_map = Map::new();
-        let mut i = 0;
-        for (j, v) in &vertices {
+        for (i, (j, v)) in vertices.iter().enumerate() {
             nid_list.push(j.clone());
             vec_list.push(v.clone());
             nid_map.insert(j.clone(), i);
-            i += 1;
         }
         
         // Sanity check on NID backlink.
         assert_eq!(nid_list.len(), nid_map.len());
         for i in 0..nid_list.len() { 
             let nid = nid_list[i];
-            assert_eq!(nid, *nid_map.get(&nid).unwrap());
+            assert_eq!(i, *nid_map.get(&nid).unwrap());
+        }
+        for nid in &nid_list { 
+            assert_eq!(*nid, nid_list[*nid_map.get(nid).unwrap()]);
         }
 
         // Sanity check on NID vectors.
@@ -569,6 +570,9 @@ impl Graph {
         for i in 0..eid_list.len() {
             let eid = eid_list[i];
             assert_eq!(i, *eid_map.get(&eid).unwrap());
+        }
+        for eid in &eid_list {
+            assert_eq!(*eid, eid_list[*eid_map.get(eid).unwrap()]);
         }
 
         Graph { nid_list, nid_map, vec_list, adj, eid_list, eid_map }
