@@ -742,9 +742,19 @@ pub fn partial_curve_graph_linear(graph: &Graph, curve: Curve, eps: f64) -> Resu
                     assert!(FDu[*l].is_some());
                 }
             }
+            // * Expect not to point at itself.
+            for j in 0..SPu.len() {
+                if let Some(i) = SPu[j][0] {
+                    assert!(i < j);
+                }
+                if let Some(k) = SPu[j][1] {
+                    assert!(j < k);
+                }
+            }
             // * Expect all non-empty intervals on FDu be referenced at least once (unless n == 1)
             let mut non_empty: Vec<usize> = FDu.iter().enumerate().filter(|(_, opt_lb)| opt_lb.is_some()).map(|(i, _)| i).collect();
             let mut non_empty = unique(non_empty);
+            if n > 1 {
             for [opt_left, opt_right] in SPu {
                 if let Some(i) = opt_left {
                     non_empty.remove(i);
@@ -754,6 +764,7 @@ pub fn partial_curve_graph_linear(graph: &Graph, curve: Curve, eps: f64) -> Resu
                 }
             }
             assert_eq!(non_empty.len(), 0);
+            }
         }
     }
 
@@ -948,14 +959,15 @@ fn free_space_row_into_reachable_interval(FDuv: FSD2) -> Vec<(Option<NID>, Optio
 
 fn construct_shortcut_pointers(FDu: &FreeSpaceLine) -> ShortcutPointer {
     let mut i = 0;
-    let mut l = 0;
+    let mut k = 0;
     let mut SPu = vec![];
     let n = FDu.len();
     for j in 0..n {
-        // Walk l to next non-empty.
-        if j == l { 
-            while l < n && FDu[l].is_none() {
-                l += 1;
+        // Walk k to next non-empty.
+        if j == k { 
+            k += 1; // Step to the right.
+            while k < n && FDu[k].is_none() {
+                k += 1;
             }
         }
         // Set index.
@@ -964,8 +976,8 @@ fn construct_shortcut_pointers(FDu: &FreeSpaceLine) -> ShortcutPointer {
         if j > 0 && FDu[i].is_some() { // Use is_some since index 0 may be empty.
             opt_left = Some(i);
         }
-        if l < n {
-            opt_right = Some(l);
+        if k < n {
+            opt_right = Some(k);
         }
         // Walk i to current non-empty.
         if FDu[j].is_some() { 
