@@ -787,6 +787,51 @@ pub fn partial_curve_graph_linear(graph: &Graph, curve: Curve, eps: f64) -> Resu
         RPuvs.push(RPuv);
         RPuvns.push(RPuvn);
     }
+    if sanity_check {
+
+        // RPuv0s: Walk from 0 to k and expect within boundary.
+        for eid in 0..graph.eid_list.len() {
+            let RPuv0 = RPuv0s[eid];
+            let FDuv = &FDuvs[eid];
+            let k = RPuv0; // Interval reachable on FDv.
+            let n = FDuv.len();
+            assert!(k <= n);
+            if FDuv[0][0][1].is_none() {
+                assert_eq!(RPuv0, 0);
+            } else {
+                let a_0 = FDuv[0][0][1].unwrap().a; // Get boundary.
+                // print_fsd(&FDuv);
+                // println!("Reachable interval from left row boundary is {k:?}.");
+                for j in 1..k { // Walk all the way.
+                    let b_j = FDuv[j][0][1].unwrap().b;
+                    assert!(a_0 <= b_j);
+                }
+            }
+        }
+
+        // RPuvs: 
+        for eid in 0..graph.eid_list.len() {
+            let RPuv = &RPuvs[eid];
+            let FDuv = &FDuvs[eid];
+            let n = FDuv.len();
+            assert_eq!(RPuv.len(), n - 1);
+            print_fsd(&FDuv);
+            println!("{RPuv:?}");
+            for i in 0..n - 1 {
+                let k = RPuv[i];
+                if i == k { // Expect empty boundary on the right side.
+                    assert!(FDuv[i+1][0][1].is_none());
+                } else { // Expect boundaries larger than 
+                    assert!(k > i);
+                    let a = FDuv[i+1][0][1].unwrap().a; // This boundary must be non-zero (otherwise we cannot move to cell on the right).
+                    for l in i+1..k {
+                        let LineBoundary { a: a_l, b: b_l } = FDuv[l][0][1].unwrap(); // This boundary must be non-zero (otherwise we cannot move to cell on the right).
+                        assert!(b_l >= a); // Expect not to be cut off as we walk to the right.
+                    }
+                }
+            }
+        }
+    }
 
     // Sweep line.
     // Initialize event buckets.
@@ -989,59 +1034,74 @@ fn construct_shortcut_pointers(FDu: &FreeSpaceLine) -> ShortcutPointer {
 }
 
 /// Computes RPuv0, RPuvk, RPuvn.
-fn construct_reachability_pointers(FDij: &FSD2) -> (usize, ReachabilityPointer, usize) {
-    // fsd2 = (x, y, [horizontal, vertical)
+fn construct_reachability_pointers(FDuv: &FSD2) -> (usize, ReachabilityPointer, usize) {
+    // fsd2 = (x, y, [horizontal, vertical])
     let mut RPuv  = vec![];
     let mut RPuv0 = None;
-    let n = fsd_width(&FDij);
-    assert_eq!(fsd_height(&FDij), 2);
+    let n = FDuv.len();
+    assert_eq!(FDuv[0].len(), 2);
     let mut S: VecDeque<(usize, f64)> = VecDeque::new();
-    let mut k = 0;
-    // We can initiate with the first boundary on the stack. 
-    // Note how we only push on cutoff up to index, so it does not impact the reachability intervals.
-    if let Some(LineBoundary { a: a_0, b: b_0 }) = FDij[0][0][1] {
+    // Initiate with the left row boundary on the stack. Note how the stack has the potential to be empty.
+    if let Some(LineBoundary { a: a_0, b: b_0 }) = FDuv[0][0][1] {
         S.push_front((0, a_0));
     } else {
-        S.push_front((0, 1.));
+        RPuv0 = Some(0);
     }
-    // let a_0 = if let Some(LineBoundary { a, b }) = FDij[0][0][1] { a } else { 2. };
 
     // Perform iteration.
     for j in 1..n {
-
-        let opt_lb = FDij[j][0][1];
         let i = j - 1;
-        // let LineBoundary { a: a_j, b: b_j } = opt_lb.unwrap_or(LineBoundary { a: 1., b: 0. });
+        let k = RPuv.len();
 
+        // Some sanity checks to perform on each iteration.
+        S.make_contiguous();
+        if S.len() > 0 {  
+            // Note how we only have to check invariants if the stack is non-empty.
         // Invariants: (given x < y)
         // * jx < jy
         // * a_jx > a_jy
-        S.make_contiguous();
         let v = S.as_slices();
         let v1 = v.0;
         let v2 = &v.0[1..];
         for ((jx, a_jx), (jy, a_jy)) in zip(v1, v2) {
             assert!(jx < jy);
             assert!(a_jx > a_jy);
+            }
+        } else {
+            // Expect the reachable pointer count (thus k) is at i.
+            assert_eq!(i, k);
         }
         
         // Check cutoff occurs, obtain related index, add new intervals reachabilities, pop back processed stack.
         let mut cutoff = None;
-        if let Some(LineBoundary { a: a_j, b: b_j }) = &opt_lb {
-            // Seek highest jx for which a_jx > b_j.
+        let mut exceed = None;
+        let opt_lb = FDuv[j][0][1];
+        if opt_lb.is_none() { // We always cut off and exceed.
+            cutoff = Some(j);
+            exceed = Some(j);
+        } else {
+            let LineBoundary { a: a_j, b: b_j } = &opt_lb.unwrap();
+            // Try to cut off: Seek highest jx for which a_jx > b_j.
             for (jx, a_jx) in &S {
-                if a_jx < b_j {
+                if a_jx > b_j {
                     cutoff = Some(*jx);
                 }
             }
+            // Try to exceed: Seek lowest jx for which a_jx <= a_j.
+            for (jx, a_jx) in &S {
+                if a_jx <= a_j {
+                    exceed = Some(*jx);
         }
+            }
+        }
+
         if let Some(jx) = cutoff {
             // Check for left row boundary.
             if RPuv0.is_none() {
                 RPuv0 = Some(i);
             }
             // Drop back of stack including jx.
-            while S.back().unwrap().0 <= jx {
+            while S.len() > 0 && S.back().unwrap().0 <= jx {
                 S.pop_back();
             }
             // Set intervals k up to j_x to i.
@@ -1049,30 +1109,14 @@ fn construct_reachability_pointers(FDij: &FSD2) -> (usize, ReachabilityPointer, 
                 RPuv.push(i);
             }
         }
-
-        // Update stack by exceeding partial maxima.
-        let mut exceed = None;
-        if let Some(LineBoundary { a: a_j, b: b_j }) = &opt_lb {
-            // Seek lowest jx for which a_jx <= a_j.
-            for (jx, a_jx) in &S {
-                if a_jx <= a_j {
-                    exceed = Some(*jx);
-                }
-            }
-        } else {
-            // If no boundary we always exceed the full stack.
-            exceed = Some(S.front().unwrap().0);
-        }
         if let Some(jx) = exceed {
             // Drop front of stack including jx.
-            while S.front().unwrap().0 >= jx {
+            while S.len() > 0 && S.front().unwrap().0 >= jx {
                 S.pop_front();
             }
         }
         if let Some(LineBoundary { a: a_j, b: b_j }) = opt_lb {
             S.push_front((j, a_j));
-        } else {
-            S.push_front((j, 1.));
         }
     }
 
@@ -1081,7 +1125,7 @@ fn construct_reachability_pointers(FDij: &FSD2) -> (usize, ReachabilityPointer, 
 
     // Push remaining intervals to reach final.
     while RPuv.len() < n - 1 {
-        RPuv.push(n); // Indicates from that interval we have a partial match.
+        RPuv.push(n - 1); // Indicates that we reach reachable space on right row boundary (thus that from that bottom interval we will have a partial match).
     }
 
     (RPuv0.unwrap_or(n), RPuv, k)
