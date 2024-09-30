@@ -695,23 +695,31 @@ pub fn partial_curve_graph_linear(graph: &Graph, curve: Curve, eps: f64) -> Resu
     for &(u, v) in &graph.eid_list {
         let q0 = graph.vec_list[u];
         let q1 = graph.vec_list[v];
-        let edge = vec![q0, q1];
         let FDu = &FDus[u];
         let FDv = &FDus[v];
         let mut FDuv: FSD2 = vec![];
         let n = curve.len();
-        for y in 0..2 {
-            let mut row = vec![];
             for x in 0..n {
-                let horizontal = if x < n - 1 { FDu[[u, v][y]] } else { None };
+            let mut col = vec![];
+            for y in 0..2 {
+                let horizontal = if x < n - 1 { [FDu, FDv][y][x] } else { None };
                 let vertical = if y == 0 { LineBoundary::compute(curve[x], q0, q1, eps) } else { None };
-                // [horizontal, vertical].
-                row.push([horizontal, vertical]);
+                col.push([horizontal, vertical]);
             }
-            FDuv.push(row);
+            FDuv.push([col[0], col[1]]);
         }
         FDuvs.push(FDuv);
             }
+    if sanity_check {
+        for FDuv in &FDuvs {
+            let n = FDuv.len();
+            assert!(FDuv[n-1][0][0].is_none());
+            assert!(FDuv[n-1][1][0].is_none());
+            for i in 0..n {
+                assert!(FDuv[i][1][1].is_none());
+            }
+        }
+    }
 
     // Shortcut Pointers. (Per node (per FDu) we have backward and forward shortcut pointers.)
     println!("Computing Shortcut Pointers.");
