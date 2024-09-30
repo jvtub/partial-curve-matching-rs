@@ -652,7 +652,7 @@ type ReachabilityPointer = Vec<usize>;
 /// 
 /// todo (optimization): Lazily evaluate FDuv's, initiate by checking solely the left boundary of every FDuv.
 #[pyfunction]
-pub fn partial_curve_graph(graph: &Graph, curve: Curve, eps: f64) -> Result<Option<Vec<NID>>, PyErr> {
+pub fn partial_curve_graph_linear(graph: &Graph, curve: Curve, eps: f64) -> Result<Option<Vec<NID>>, PyErr> {
     let n = curve.len() - 1; // Number of intervals.
     // Map eid to vector index (such as used for FDu, for which having a set is problematic (a technically)).
 
