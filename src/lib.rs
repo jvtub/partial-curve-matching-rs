@@ -480,7 +480,7 @@ type EID = usize;
 /// Alternative, simplified datastructure for Free-Space Diagram.
 /// 
 /// This one is easier to extend in comparison to ArrayView which is not intended to append rows/columns.
-type FSD2 = Vec<Vec<[std::option::Option<LineBoundary>; 2]>>; // (x, y, [horizontal, vertical])
+type FSD2 = Vec<[[std::option::Option<LineBoundary>; 2]; 2]>; // (x, y, [horizontal, vertical])
 
 /// A sequence of nodes to walk along the graph.
 type Path = Vec<NID>;
@@ -497,8 +497,6 @@ pub struct Graph {
     /// 
     /// Note: Since fixed position in vector this functions as a index as well.
     nid_list: Vec<NID>,
-    /// Back-link for NIDs.
-    nid_map: Map<NID, usize>,
     /// Node vectors.
     vec_list: Vec<Vector>,
 
@@ -592,50 +590,6 @@ impl Graph {
 }
 
 
-fn fsd_height(fsd: &FSD2) -> usize {
-    fsd.len()
-}
-
-
-fn fsd_width(fsd: &FSD2) -> usize {
-    fsd[0].len()
-}
-
-
-/// Propagate bottom cell boundary reachability to the right while continuous.
-pub fn propagate_bottom_row(mut fsd: FSD2) -> FSD2{
-    let y = 0;
-    let n = fsd_width(&fsd);
-
-    // We propagate right while we have full boundaries.
-    let mut i = 0;
-    for x in 0..n { // n-1 latest width but n is set to None anyways.
-
-        let horizontal = fsd[y][x][0];
-        if horizontal.is_none() {
-            break;
-        }
-
-        let LineBoundary { a, b } = horizontal.unwrap();
-        if a > 0. {
-            break;
-        } 
-
-        i += 1;
-        if b < 1. {
-            break;
-        }
-    }
-
-    // Set unreachable cell boundaries to none.
-    for x in i..n {
-        fsd[y][x][0] = None;
-    }
-
-    fsd
-}
-
-
 /// Compute reachability in right and top cell boundary.
 /// 
 /// Left and bottom boundary are from RSD.
@@ -669,41 +623,6 @@ pub fn propagate_cell_reachability(bottom: OptLineBoundary, left: OptLineBoundar
 }
 
 
-/// Convert an FSD into an RSD.
-pub fn fsd_to_rsd(mut fsd: FSD2, propagate: bool) -> FSD2 {
-    
-    let m = fsd_height(&fsd);
-    let n = fsd_width(&fsd);
-
-    // Initiate bottom row. (Leave left boundary untouched, because we do PCM.)
-    if propagate {
-        fsd = propagate_bottom_row(fsd);
-
-        if DEBUG {
-            println!("fsd with bottom row propagated:");
-            print_fsd(&fsd);
-            println!("");
-        }
-    }
-
-    // Walk cells from left to right, bottom to top, and propagate reachability within cell boundaries.
-    for y in 0..m-1 {
-        for x in 0..n-1 {
-            let bottom = fsd[y][x][0];
-            let left   = fsd[y][x][1];
-            let top    = fsd[y+1][x][0];
-            let right  = fsd[y][x+1][1];
-
-            let (right, top) = propagate_cell_reachability(bottom, left, right, top);
-            fsd[y+1][x][0] = top;
-            fsd[y][x+1][1] = right;
-        }
-    }
-
-    fsd
-}
-
-
 /// Check whether the second [`OptLineBoundary`] is a subset of the first [`OptLineBoundary`].
 pub fn lb_is_subset(lb1: OptLineBoundary, lb2: OptLineBoundary) -> bool {
     if lb2.is_none() { // If lb2 is none, lb1 is guaranteed to be larger.
@@ -718,39 +637,28 @@ pub fn lb_is_subset(lb1: OptLineBoundary, lb2: OptLineBoundary) -> bool {
 }
 
 
-/// Extract top boundary.
-pub fn extract_top(fsd: &FSD2) -> Vec<OptLineBoundary> {
-    let mut top = vec![];
-    let n = fsd_width(fsd);
-    let m = fsd_height(fsd);
-    for x in 0..n {
-        top.push(fsd[m-1][x][0]);
-    }
-    return top;
-}
-
-
-/// Returns true if the top is empty.
-pub fn is_top_empty(fsd: &FSD2) -> bool {
-    !extract_top(fsd).into_iter().any(|lb| lb.is_some())
-}
-
 #[pyfunction]
 pub fn make_graph(vertices: Vec<(NID, Vector)>, edges: Vec<(NID, NID)>) -> Graph {
     Graph::new(vertices, edges)
 }
 
+
+type Opt<T> = Option<T>;
+type FreeSpaceLine = Vec<OptLineBoundary>;
+type ShortcutPointer = Vec<[Opt<usize>; 2]>;
+type ReachabilityPointer = Vec<usize>;
+
 /// Match curve against a graph with epsilon threshold.
 /// 
-/// todo (optimization): Lazily evaluate FDij's, initiate by checking solely the left boundary of every FDij.
+/// todo (optimization): Lazily evaluate FDuv's, initiate by checking solely the left boundary of every FDuv.
 #[pyfunction]
 pub fn partial_curve_graph(graph: &Graph, curve: Curve, eps: f64) -> Result<Option<Vec<NID>>, PyErr> {
     let n = curve.len() - 1; // Number of intervals.
     // Map eid to vector index (such as used for FDu, for which having a set is problematic (a technically)).
 
     // Free-Space Lines. (Per node do we have a one-dimensional line.)
-    println!("Computing FDus.");
-    let mut FDus: FreeSpaceLine = vec![];
+    println!("Computing Free-Space Lines.");
+    let mut FDus: Vec<FreeSpaceLine> = vec![];
     for u in 0..graph.nid_list.len() {
         let mut FDu = vec![];
         for i in 0..n {
@@ -782,6 +690,7 @@ pub fn partial_curve_graph(graph: &Graph, curve: Curve, eps: f64) -> Result<Opti
     }
 
     // Free-Space Rows. (Per node pair we have a row of free-space.)
+    println!("Computing Free-Space Rows");
     let mut FDuvs: Vec<FSD2> = vec![];
     for &(u, v) in &graph.eid_list {
         let q0 = graph.vec_list[u];
@@ -805,7 +714,7 @@ pub fn partial_curve_graph(graph: &Graph, curve: Curve, eps: f64) -> Result<Opti
             }
 
     // Shortcut Pointers. (Per node (per FDu) we have backward and forward shortcut pointers.)
-    println!("Computing SPus.");
+    println!("Computing Shortcut Pointers.");
     let mut SPus: Vec<ShortcutPointer> = vec![];
     for u in 0..graph.nid_list.len() {
         let FDu = &FDus[u];
@@ -848,7 +757,7 @@ pub fn partial_curve_graph(graph: &Graph, curve: Curve, eps: f64) -> Result<Opti
     //
     // RPuv0: Most-right reachable row segment. Note how most-left is trivial.
     // RPuvn: Most-left  reachable row segment which can pass FSD at uvk. Note how most-right is trivial.
-    println!("Computing RPuvs.");
+    println!("Computing Reachability Pointers.");
     let mut RPuvs = vec![];
     let mut RPuv0s = vec![]; // What interval can we reach when starting at the (free space on the) left cell boundary.
     let mut RPuvns = vec![];  // From what interval can we reach the (free space on the) right cell boundary.
@@ -896,8 +805,7 @@ pub fn partial_curve_graph(graph: &Graph, curve: Curve, eps: f64) -> Result<Opti
     }
 
     // Start sweeping!
-    println!("Sweep.");
-    let mut run = true;
+    println!("Sweeping.");
     let mut i = 0;
     let mut x = 0.; // for sanity checking
     let mut evicted = Set::new(); // Tracking evicted NIDs to prevent pushing back nodes onto the current event bucket which have already been processed for the current interval.
@@ -988,8 +896,8 @@ fn print_lb(opt_lb : OptLineBoundary) {
 
 /// Print FSD2 (for debugging purposes).
 fn print_fsd(fsd: &FSD2) {
-    let n = fsd_width(fsd);
-    let m = fsd_height(fsd);
+    let n = fsd.len();
+    let m = fsd[0].len();
     let offset = 11;
     // (0..10).rev()
     for y in (0..m).rev() {
@@ -1008,7 +916,7 @@ fn print_fsd(fsd: &FSD2) {
                 //     }
                 // }
                 // print!("{space}.");
-                print_lb(fsd[y][x][a]);
+                print_lb(fsd[x][y][a]);
                 print!("             "); // 13
             }
             println!();
@@ -1025,18 +933,12 @@ fn free_space_line_to_shortcut_pointers_next(FDi: Vec<OptLineBoundary>) -> Vec<(
 
 
 /// todo Convert a Free-Space Diagram row into a Reachable Interval list.za
-fn free_space_row_into_reachable_interval(FDij: FSD2) -> Vec<(Option<NID>, Option<NID>)> {
+fn free_space_row_into_reachable_interval(FDuv: FSD2) -> Vec<(Option<NID>, Option<NID>)> {
     // todo
     vec![]
 }
 
-type Opt<T> = Option<T>;
-
-type FreeSpaceLine = Vec<Vec<OptLineBoundary>>;
-type ShortcutPointer = Vec<[Opt<usize>; 2]>;
-type ReachabilityPointer = Vec<usize>;
-
-fn construct_shortcut_pointers(FDu: &Vec<Opt<LineBoundary>>) -> ShortcutPointer {
+fn construct_shortcut_pointers(FDu: &FreeSpaceLine) -> ShortcutPointer {
     let mut i = 0;
     let mut l = 0;
     let mut SPu = vec![];
@@ -1197,7 +1099,7 @@ fn extract_bucket_nid(bucket: &mut EventBucket, nid: usize) -> Option<PathPointe
 
 /// Pointer living at FDu within the event bucket i.
 /// When sweeping we send 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 struct PathPointer {
     /// This is the offset which could be endorsed by the bottom interval if it propagates to the same cell.
     c: f64,
@@ -1249,12 +1151,9 @@ impl Ord        for PathPointer {
     }
 }
 
-
 pub mod prelude {   
-    pub use crate::{OptLineBoundary, LineBoundary, Vector, FSD, partial_curve, EPS, Curve, Graph, partial_curve_graph, make_graph};
+    pub use crate::{OptLineBoundary, LineBoundary, Vector, FSD, partial_curve, EPS, Curve, Graph, partial_curve_graph_linear, make_graph};
 }
-
-
 
 #[test]
 fn test_taking_path_works() {
