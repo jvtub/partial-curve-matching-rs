@@ -283,7 +283,7 @@ fn construct_reachability_pointers(FDuv: &FSDrow) -> (usize, ReachabilityPointer
     let mut S: VecDeque<(usize, f64)> = VecDeque::new();
     // Initiate with the left row boundary on the stack. Note how the stack has the potential to be empty.
     if let Some(LineBoundary { a: a_0, b: b_0 }) = FDuv[0][0][1] {
-        S.push_front((0, a_0));
+        S.push_back((0, a_0));
     } else {
         RPuv0 = Some(0);
     }
@@ -303,6 +303,7 @@ fn construct_reachability_pointers(FDuv: &FSDrow) -> (usize, ReachabilityPointer
             let v = S.as_slices();
             let v1 = v.0;
             let v2 = &v.0[1..];
+            // println!("S: {S:?}");
             for ((jx, a_jx), (jy, a_jy)) in zip(v1, v2) {
                 assert!(jx < jy);
                 assert!(a_jx > a_jy);
@@ -329,7 +330,7 @@ fn construct_reachability_pointers(FDuv: &FSDrow) -> (usize, ReachabilityPointer
             }
             // Try to exceed: Seek lowest jx for which a_jx <= a_j.
             for (jx, a_jx) in &S {
-                if a_jx <= a_j {
+                if exceed.is_none() && a_jx <= a_j {
                     exceed = Some(*jx);
                 }
             }
@@ -340,9 +341,9 @@ fn construct_reachability_pointers(FDuv: &FSDrow) -> (usize, ReachabilityPointer
             if RPuv0.is_none() {
                 RPuv0 = Some(i);
             }
-            // Drop back of stack including jx.
-            while S.len() > 0 && S.back().unwrap().0 <= jx {
-                S.pop_back();
+            // Drop front of stack including jx.
+            while S.len() > 0 && S.front().unwrap().0 <= jx {
+                S.pop_front();
             }
             // Set intervals k up to j_x to i.
             while RPuv.len() < jx {
@@ -351,12 +352,12 @@ fn construct_reachability_pointers(FDuv: &FSDrow) -> (usize, ReachabilityPointer
         }
         if let Some(jx) = exceed {
             // Drop front of stack including jx.
-            while S.len() > 0 && S.front().unwrap().0 >= jx {
-                S.pop_front();
+            while S.len() > 0 && S.back().unwrap().0 >= jx {
+                S.pop_back();
             }
         }
         if let Some(LineBoundary { a: a_j, b: b_j }) = opt_lb {
-            S.push_front((j, a_j));
+            S.push_back((j, a_j));
         }
     }
 
