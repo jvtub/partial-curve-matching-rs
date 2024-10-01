@@ -201,7 +201,7 @@ impl FSD {
     /// Compute steps to walk along curves for partial matching solution.
     /// 
     /// Note: Should be appied to a reachability-space diagram.
-    pub fn pcm_steps(&self) -> Result<Option<Vec<(f64,f64)>>, String> {
+    pub fn pcm_steps(&self) -> Option<Vec<(f64,f64)>> {
 
         let rsd = if self.is_rsd { self } else { &self.to_rsd() };
         let n = rsd.n;
@@ -223,7 +223,7 @@ impl FSD {
                 break;
             }
         }
-        if !found { return Ok(None) }
+        if !found { return None }
 
         // Final step is found.
         steps.push(position_to_ij(curr));
@@ -233,7 +233,8 @@ impl FSD {
 
             // println!("curr: {curr:?}");
             if rsd.segs[position_to_seg(curr)].is_none() {
-                return Err(format!("Current segment while walking ({curr:?}) should not be empty."));
+                // Sanity check:
+                panic!("Current segment while walking ({curr:?}) should not be empty.");
             }
 
             // Try to walk backwards.
@@ -295,7 +296,8 @@ impl FSD {
             }
 
             if next.is_none() {
-                return Err(format!("Should find next step in backwards walk at {curr:?}.\n{rsd:?}"));
+                // Sanity check:
+                panic!("Should find next step in backwards walk at {curr:?}.\n{rsd:?}");
             }
             // println!("next: {next:?}");
             curr = next.unwrap();
@@ -304,7 +306,7 @@ impl FSD {
         }
 
         steps.reverse();
-        Ok(Some(steps))
+        Some(steps)
     }
 
 }
