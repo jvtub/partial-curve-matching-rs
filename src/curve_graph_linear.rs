@@ -416,7 +416,7 @@ pub fn partial_curve_graph_linear(graph: &LinearGraph, curve: Curve, eps: f64) -
     let n = curve.len() - 1; // Number of intervals.
 
     // Free-Space Lines. (Per node do we have a one-dimensional line.)
-    println!("Computing Free-Space Lines.");
+    // println!("Computing Free-Space Lines.");
     let mut FDus: Vec<FreeSpaceLine> = vec![];
     for u in 0..graph.nid_list.len() {
         let mut FDu = vec![];
@@ -449,7 +449,7 @@ pub fn partial_curve_graph_linear(graph: &LinearGraph, curve: Curve, eps: f64) -
     }
 
     // Free-Space Rows. (Per node pair we have a row of free-space.)
-    println!("Computing Free-Space Rows");
+    // println!("Computing Free-Space Rows");
     let mut FDuvs: Vec<FSDrow> = vec![];
     for &(u, v) in &graph.eid_list {
         let q0 = graph.vec_list[u];
@@ -481,7 +481,7 @@ pub fn partial_curve_graph_linear(graph: &LinearGraph, curve: Curve, eps: f64) -
     }
 
     // Shortcut Pointers. (Per node (per FDu) we have backward and forward shortcut pointers.)
-    println!("Computing Shortcut Pointers.");
+    // println!("Computing Shortcut Pointers.");
     let mut SPus: Vec<ShortcutPointer> = vec![];
     for u in 0..graph.nid_list.len() {
         let FDu = &FDus[u];
@@ -534,7 +534,7 @@ pub fn partial_curve_graph_linear(graph: &LinearGraph, curve: Curve, eps: f64) -
     //   If we start on the left boundary, we may not walk that far to the right.
     //
     // RPuv0: Most-right reachable row segment starting at a non-empty left row boundary.
-    println!("Computing Reachability Pointers.");
+    // println!("Computing Reachability Pointers.");
     let mut RPuvs = vec![];
     let mut RPuv0s = vec![]; // What interval can we reach when starting at the (free space on the) left cell boundary.
     for eid in 0..graph.eid_list.len() {
@@ -571,8 +571,8 @@ pub fn partial_curve_graph_linear(graph: &LinearGraph, curve: Curve, eps: f64) -
             let FDuv = &FDuvs[eid];
             let n = FDuv.len();
             assert_eq!(RPuv.len(), n - 1);
-            print_fsdrow(&FDuv);
-            println!("{RPuv:?}");
+            // print_fsdrow(&FDuv);
+            // println!("{RPuv:?}");
             for i in 0..n - 1 {
                 let k = RPuv[i];
                 if i == k { // Expect empty boundary on the right side.
@@ -591,7 +591,7 @@ pub fn partial_curve_graph_linear(graph: &LinearGraph, curve: Curve, eps: f64) -
     
     // Sweep line.
     // Initialize event buckets.
-    println!("Initializing event buckets.");
+    // println!("Initializing event buckets.");
     let mut event_buckets = vec![];
     for i in 0..n {
         // Note how we use a reversed since we want to pop lowest a's first (we sweep from left to right).
@@ -600,7 +600,7 @@ pub fn partial_curve_graph_linear(graph: &LinearGraph, curve: Curve, eps: f64) -
     }
     // Initiate with non-empty left boundaries.
     let tmp = graph.eid_list.len();
-    println!("Number of edges: {tmp}");
+    // println!("Number of edges: {tmp}");
     for eid in 0..graph.eid_list.len() {
         let uv = &graph.eid_list[eid];
         let _eid = *graph.eid_map.get(uv).unwrap();
@@ -611,12 +611,12 @@ pub fn partial_curve_graph_linear(graph: &LinearGraph, curve: Curve, eps: f64) -
             if k >= n {
                 let mut path = vec![u, v];
                 // Map path back to original vectors.
-                println!("Found direct path.");
+                // println!("Found direct path.");
                 return Some(graph.map_path(path));
             }
             let mut l = 0;
             while l <= k {
-                println!("l: {l:?}, k: {k:?}, n: {n:?}");
+                // println!("l: {l:?}, k: {k:?}, n: {n:?}");
                 let FDv = &FDus[v];
                 if let Some(LineBoundary { a: c, b: d }) = FDv[l] {
                     // Push entire interval.
@@ -629,17 +629,17 @@ pub fn partial_curve_graph_linear(graph: &LinearGraph, curve: Curve, eps: f64) -
     }
 
     // Start sweeping!
-    println!("Sweeping.");
+    // println!("Sweeping.");
     let mut i = 0;
     let mut x = 0.; // for sanity checking
     let mut evicted = Set::new(); // Tracking evicted NIDs to prevent pushing back nodes onto the current event bucket which have already been processed for the current interval.
     while i < n { // Loop is called after every FDuv interval processed or an empty event buffer occurring.
-        println!("Currently at event bucket {i:?}."); // Current column we are at (we sweep to the right).
+        // println!("Currently at event bucket {i:?}."); // Current column we are at (we sweep to the right).
 
         // Obtain next event for our sweep line.
         let opt_pathpointer = {
             let current_bucket = event_buckets.get_mut(i).unwrap();
-            println!("Current bucket: {current_bucket:?}.");
+            // println!("Current bucket: {current_bucket:?}.");
             if current_bucket.is_empty() { // We have to check next bucket.
                 i += 1; // Continue to next curve interval.
                 evicted = Set::new(); // Thrash evicted nodes for new event bucket.
@@ -655,7 +655,7 @@ pub fn partial_curve_graph_linear(graph: &LinearGraph, curve: Curve, eps: f64) -
 
         // Take out a lowest value.
         let pathpointer = opt_pathpointer.unwrap();
-        println!("Current pathpointer: {pathpointer:?}.");
+        // println!("Current pathpointer: {pathpointer:?}.");
         let PathPointer { c, from, curr } = pathpointer;
 
         // Sanity check we are sweeping to the right.
@@ -675,45 +675,45 @@ pub fn partial_curve_graph_linear(graph: &LinearGraph, curve: Curve, eps: f64) -
         // 
         let u = curr;
         if evicted.contains(&u) { // We already processed u, skip this iteration.
-            println!("Skipping evicted node {u}.");
+            // println!("Skipping evicted node {u}.");
             continue;
         };
         evicted.insert(u); // Don't check this node again for this event bucket.
         for v in graph.adj.get(&u).unwrap().clone() {
-            println!("Processing edge ({u},{v}).");
+            // println!("Processing edge ({u},{v}).");
             let eid = graph.eid_map.get(&(u, v)).unwrap().clone();
             let k = RPuvs[eid][i];
             if k == n { // See whether we can reach the end.
                 let mut path = from;
                 path.push(u);
                 path.push(v);
-                println!("Found reachable to end {path:?}.");
+                // println!("Found reachable to end {path:?}.");
                 return Some(graph.map_path(path)); // Map path back to original vectors.
             }
             // Iterate from left to right on reachable elements and push to respective event bucket.
             let mut l = i;
             while l <= k { // Note that k < n.
                 let tmp = FDus[v][l];
-                println!("Checking FDuv[{v}][{l}]: {tmp:?}");
+                // println!("Checking FDuv[{v}][{l}]: {tmp:?}");
                 if let Some(LineBoundary { a: c_n, b }) = FDus[v][l] { // Check necessary for first element.
                     // Add to event bucket.
                     let bucket = event_buckets.get_mut(l).unwrap();
                     let extracted = extract_bucket_nid(bucket, v);
                     if let Some(path_pointer) = extracted && path_pointer.c <= c_n {
                          // Ignore our just created event (reinsert old one).
-                        println!("Event already present {path_pointer:?}.");
+                        // println!("Event already present {path_pointer:?}.");
                         bucket.push(Reverse(path_pointer));
                     } else { // Add our event (overwrite previously stored), because a is lower.
                         let mut path = from.clone();
                         path.push(u);
                         let pathpointer = PathPointer { c: c_n.max(c), from: path, curr: v };
-                        println!("Add new event {pathpointer:?}.");
+                        // println!("Add new event {pathpointer:?}.");
                         bucket.push(Reverse(pathpointer));
                     }
                 }
                 l = SPus[v][l][1].unwrap_or(n);
             }
-            println!("End of this iteration.")
+            // println!("End of this iteration.")
         }
     }
 
