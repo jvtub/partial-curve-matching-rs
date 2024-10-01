@@ -40,26 +40,14 @@ type FSDrow = Vec<[[std::option::Option<LineBoundary>; 2]; 2]>; // (x, y, [horiz
 pub fn print_fsdrow(fsd: &FSDrow) {
     let n = fsd.len();
     let m = fsd[0].len();
-    let offset = 11;
-    // (0..10).rev()
     for y in (0..m).rev() {
         for a in [1, 0] {
             if a == 0 {
-                print!("             "); // 13
+                print!("             "); // Offset of 13 characters.
             }
             for x in 0..n {
-                // let mut space = String::from("");
-                // for i in 0..10*x {
-                //     space.push_str(" ");
-                // }
-                // if a == 1 {
-                //     for i in 0..5 {
-                //         space.push_str(" ");
-                //     }
-                // }
-                // print!("{space}.");
                 print_lb(fsd[x][y][a]);
-                print!("             "); // 13
+                print!("             "); // Offset of 13 characters.
             }
             println!();
         }
@@ -138,12 +126,14 @@ pub struct LinearGraph {
     /// Adjacent nodes.
     adj: Map<NID, Set<NID>> ,
 
-    /// List NIDs in graph.
+    /// List NIDs in graph. Used for transforming local node identifiers which actual graph node identifiers.
     /// 
     /// Note: Since fixed position in vector this functions as a index as well.
     nid_list: Vec<NID>,
     /// Node vectors.
     vec_list: Vec<Vector>,
+    /// Functionality not used, but acts as a sanity check mechanism to check transformation is the identity function.
+    #[allow(dead_code)]
     nid_map: Map<NID, NID>,
 
     /// Map edge to unique identifier.
@@ -242,6 +232,7 @@ pub fn make_linear_graph(vertices: Vec<(NID, Vector)>, edges: Vec<(NID, NID)>) -
 
 
 /// Convert a Free-Space Diagram boundary line into a Shortcut Pointer list.
+#[allow(non_snake_case)]
 fn construct_shortcut_pointers(FDu: &FreeSpaceLine) -> ShortcutPointer {
     let mut i = 0;
     let mut k = 0;
@@ -274,6 +265,7 @@ fn construct_shortcut_pointers(FDu: &FreeSpaceLine) -> ShortcutPointer {
 }
 
 /// Computes RPuv0, RPuvk.
+#[allow(non_snake_case)]
 fn construct_reachability_pointers(FDuv: &FSDrow) -> (usize, ReachabilityPointer) {
     // FSDrow = (x, y, [horizontal, vertical])
     let mut RPuv  = vec![];
@@ -282,7 +274,7 @@ fn construct_reachability_pointers(FDuv: &FSDrow) -> (usize, ReachabilityPointer
     assert_eq!(FDuv[0].len(), 2);
     let mut S: VecDeque<(usize, f64)> = VecDeque::new();
     // Initiate with the left row boundary on the stack. Note how the stack has the potential to be empty.
-    if let Some(LineBoundary { a: a_0, b: b_0 }) = FDuv[0][0][1] {
+    if let Some(LineBoundary { a: a_0, b: _ }) = FDuv[0][0][1] {
         S.push_back((0, a_0));
     } else {
         RPuv0 = Some(0);
@@ -356,17 +348,17 @@ fn construct_reachability_pointers(FDuv: &FSDrow) -> (usize, ReachabilityPointer
                 S.pop_back();
             }
         }
-        if let Some(LineBoundary { a: a_j, b: b_j }) = opt_lb {
+        if let Some(LineBoundary { a: a_j, b: _ }) = opt_lb {
             S.push_back((j, a_j));
         }
     }
 
     // Most-right cell boundary is reachable by current interval k.
-    let k = RPuv.len();
-
+    let mut k = RPuv.len();
     // Push remaining intervals to reach final.
-    while RPuv.len() < n - 1 {
+    while k < n - 1 {
         RPuv.push(n - 1); // Indicates that we reach reachable space on right row boundary (thus that from that bottom interval we will have a partial match).
+        k = RPuv.len();
     }
 
     (RPuv0.unwrap_or(n), RPuv)
@@ -411,6 +403,7 @@ fn unique<T>(elements: Vec<T>) -> Set<T> where T: Ord {
 /// * Constructing Reachability Pointers.
 /// * Creating initial events.
 /// * Sweeping.
+#[allow(non_snake_case)]
 #[pyfunction]
 pub fn partial_curve_graph_linear(graph: &LinearGraph, curve: Curve, eps: f64) -> Option<Vec<NID>> {
 
@@ -436,13 +429,13 @@ pub fn partial_curve_graph_linear(graph: &LinearGraph, curve: Curve, eps: f64) -
             assert_eq!(FDu.len(), n);
             // If we have at index i a value of b == 1., expect to have a == 0. at index i + 1;
             for i in 0..n {
-                if let Some(LineBoundary { a, b }) = FDu[i] && b == 1. && i < n - 1{
+                if let Some(LineBoundary { a: _, b }) = FDu[i] && b == 1. && i < n - 1{
                     assert_eq!(FDu[i + 1].unwrap().a, 0.);
                 }
             }
             // Similarly for the reverse.
             for i in (0..n).rev() {
-                if let Some(LineBoundary { a, b }) = FDu[i] && b == 0. && i > 0 {
+                if let Some(LineBoundary { a: _, b }) = FDu[i] && b == 0. && i > 0 {
                 assert_eq!(FDu[i - 1].unwrap().b, 1.);
                 }
             }
@@ -512,7 +505,7 @@ pub fn partial_curve_graph_linear(graph: &LinearGraph, curve: Curve, eps: f64) -
                 }
             }
             // * Expect all non-empty intervals on FDu be referenced at least once (unless n == 1)
-            let mut non_empty: Vec<usize> = FDu.iter().enumerate().filter(|(_, opt_lb)| opt_lb.is_some()).map(|(i, _)| i).collect();
+            let non_empty: Vec<usize> = FDu.iter().enumerate().filter(|(_, opt_lb)| opt_lb.is_some()).map(|(i, _)| i).collect();
             let mut non_empty = unique(non_empty);
             if n > 1 {
                 for [opt_left, opt_right] in SPu {
@@ -582,7 +575,7 @@ pub fn partial_curve_graph_linear(graph: &LinearGraph, curve: Curve, eps: f64) -
                     assert!(k > i);
                     let a = FDuv[i+1][0][1].unwrap().a; // This boundary must be non-zero (otherwise we cannot move to cell on the right).
                     for l in i+1..k {
-                        let LineBoundary { a: a_l, b: b_l } = FDuv[l][0][1].unwrap(); // This boundary must be non-zero (otherwise we cannot move to cell on the right).
+                        let LineBoundary { a: _, b: b_l } = FDuv[l][0][1].unwrap(); // This boundary must be non-zero (otherwise we cannot move to cell on the right).
                         assert!(b_l >= a); // Expect not to be cut off as we walk to the right.
                     }
                 }
@@ -594,13 +587,13 @@ pub fn partial_curve_graph_linear(graph: &LinearGraph, curve: Curve, eps: f64) -
     // Initialize event buckets.
     // println!("Initializing event buckets.");
     let mut event_buckets = vec![];
-    for i in 0..n {
+    for _ in 0..n {
         // Note how we use a reversed since we want to pop lowest a's first (we sweep from left to right).
         let bucket: BinaryHeap<Reverse<PathPointer>> = BinaryHeap::new();
         event_buckets.push(bucket);
     }
     // Initiate with non-empty left boundaries.
-    let tmp = graph.eid_list.len();
+    // let tmp = graph.eid_list.len();
     // println!("Number of edges: {tmp}");
     for eid in 0..graph.eid_list.len() {
         let uv = &graph.eid_list[eid];
@@ -610,7 +603,7 @@ pub fn partial_curve_graph_linear(graph: &LinearGraph, curve: Curve, eps: f64) -
         if FDuvs[eid][0][0][1].is_some() { // If left row boundary exists.
             let k = RPuv0s[eid];
             if k >= n {
-                let mut path = vec![u, v];
+                let  path = vec![u, v];
                 // Map path back to original vectors.
                 // println!("Found direct path.");
                 return Some(graph.map_path(path));
@@ -619,9 +612,9 @@ pub fn partial_curve_graph_linear(graph: &LinearGraph, curve: Curve, eps: f64) -
             while l <= k {
                 // println!("l: {l:?}, k: {k:?}, n: {n:?}");
                 let FDv = &FDus[v];
-                if let Some(LineBoundary { a: c, b: d }) = FDv[l] {
+                if let Some(LineBoundary { a: c, b: _ }) = FDv[l] {
                     // Push entire interval.
-                    let mut bucket = event_buckets.get_mut(l).unwrap();
+                    let bucket = event_buckets.get_mut(l).unwrap();
                     bucket.push(Reverse(PathPointer { c, from: vec![u], curr: v }));
                 }
                 l = SPus[v][l][1].unwrap_or(n);
@@ -694,9 +687,9 @@ pub fn partial_curve_graph_linear(graph: &LinearGraph, curve: Curve, eps: f64) -
             // Iterate from left to right on reachable elements and push to respective event bucket.
             let mut l = i;
             while l <= k { // Note that k < n.
-                let tmp = FDus[v][l];
+                // let tmp = FDus[v][l];
                 // println!("Checking FDuv[{v}][{l}]: {tmp:?}");
-                if let Some(LineBoundary { a: c_n, b }) = FDus[v][l] { // Check necessary for first element.
+                if let Some(LineBoundary { a: c_n, b: _ }) = FDus[v][l] { // Check necessary for first element.
                     // Add to event bucket.
                     let bucket = event_buckets.get_mut(l).unwrap();
                     let extracted = extract_bucket_nid(bucket, v);
