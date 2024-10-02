@@ -82,15 +82,15 @@ impl FSD {
                     //     println!("c1[x].distance(c2[y]) {:?}", c1[x].distance(c2[y])); 
                     //     println!("c1[x].distance(c2[y+1]) {:?}", c1[x].distance(c2[y+1])); 
                         if a == 0. {
-                            assert!(c1[x].distance(c2[y]) < eps);
+                            assert!(c1[x].distance(c2[y]) <= eps);
                         }
                         if c1[x].distance(c2[y]) < eps {
                             assert!(a == 0.);
                         }
                         if b == 1. {
-                            assert!(c1[x].distance(c2[y+1]) < eps);
+                            assert!(c1[x].distance(c2[y+1]) <= eps);
                         }
-                        if c1[x].distance(c2[y+1]) < eps {
+                        if c1[x].distance(c2[y+1]) <= eps {
                             assert!(b == 1.);
                         }
                     } else {
