@@ -1,6 +1,6 @@
 use ndarray::{s, Array2, Array3, ArrayBase, Dim, OwnedRepr};
 
-use crate::{curve::Curve, lineboundary::OptLineBoundary, prelude::LineBoundary};
+use crate::{curve::Curve, lineboundary::OptLineBoundary, LineBoundary};
 
 
 /// Position on the FSD considering axis.

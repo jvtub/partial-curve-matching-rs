@@ -4,7 +4,8 @@ use pyo3::pyfunction;
 use crate::curve::Curve;
 use crate::lineboundary::print_lb;
 use crate::sanity_check;
-use crate::{prelude::LineBoundary, vector::Vector};
+use crate::vector::Vector;
+use crate::LineBoundary;
 use std::cmp::Ordering;
 use std::cmp::Reverse;
 use std::collections::BTreeMap as Map;
@@ -18,26 +19,27 @@ type Opt<T> = Option<T>;
 
 /// Node identifier.
 /// 
-type NID = usize;
+pub type NID = usize;
 
 /// Edge identifier.
-type EID = usize;
+pub type EID = usize;
 
 /// A pair of nodes, thus an edge.
-type NIDPair = (NID, NID);
+pub type NIDPair = (NID, NID);
 
 /// A sequence of nodes to walk along the graph.
-type Path = Vec<NID>;
+pub type Path = Vec<NID>;
 
 /// Curve on horizontal axis, vertical axis is a single point namely a graph node.
-type FreeSpaceLine = Vec<Opt<LineBoundary>>;
+pub type FreeSpaceLine = Vec<Opt<LineBoundary>>;
 
 /// Free-Space Diagram row.
 /// Linear approach works on rows of Free-space diagrams, curve on horizontal axis, edge on vertical axis.
-type FSDrow = Vec<[[std::option::Option<LineBoundary>; 2]; 2]>; // (x, y, [horizontal, vertical])
+pub type FSDrow = Vec<[[std::option::Option<LineBoundary>; 2]; 2]>; // (x, y, [horizontal, vertical])
 
 /// Print FSDrow (for debugging purposes).
-pub fn print_fsdrow(fsd: &FSDrow) {
+#[allow(dead_code)]
+fn print_fsdrow(fsd: &FSDrow) {
     let n = fsd.len();
     let m = fsd[0].len();
     for y in (0..m).rev() {
