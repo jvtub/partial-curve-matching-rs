@@ -124,7 +124,7 @@ impl Ord        for PathPointer {
 /// Essentially a graph consists of a collection of nodes and edges.
 /// For simplicity we assume the graph to be vectorized, which means that edges have no curvature (beyond a straight line segment between the vertices the edge connects).
 #[pyclass]
-pub struct LinearGraph {
+pub struct Graph {
     /// Adjacent nodes.
     adj: Map<NID, Set<NID>> ,
 
@@ -146,7 +146,7 @@ pub struct LinearGraph {
     eid_map: Map<NIDPair, EID>,
 }
 
-impl LinearGraph {
+impl Graph {
 
     /// Map transformed node indices back to their original index.
     pub fn map_path(&self, path: Path) -> Path {
@@ -221,15 +221,15 @@ impl LinearGraph {
             assert_eq!(*eid, eid_list[*eid_map.get(eid).unwrap()]);
         }
 
-        LinearGraph { nid_list, nid_map, vec_list, adj, eid_list, eid_map }
+        Graph { nid_list, nid_map, vec_list, adj, eid_list, eid_map }
     }
 }
 
 
 /// Make a graph out of a list of vertices and a list of edges.
 #[pyfunction]
-pub fn make_linear_graph(vertices: Vec<(NID, Vector)>, edges: Vec<(NID, NID)>) -> LinearGraph {
-    LinearGraph::new(vertices, edges)
+pub fn make_graph(vertices: Vec<(NID, Vector)>, edges: Vec<(NID, NID)>) -> Graph {
+    Graph::new(vertices, edges)
 }
 
 
@@ -407,7 +407,7 @@ fn unique<T>(elements: Vec<T>) -> Set<T> where T: Ord {
 /// * Sweeping.
 #[allow(non_snake_case)]
 #[pyfunction]
-pub fn partial_curve_graph_linear(graph: &LinearGraph, curve: Curve, eps: f64) -> Option<Vec<NID>> {
+pub fn partial_curve_graph(graph: &Graph, curve: Curve, eps: f64) -> Option<Vec<NID>> {
 
     let n = curve.len() - 1; // Number of intervals.
 

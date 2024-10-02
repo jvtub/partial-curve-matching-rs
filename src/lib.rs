@@ -15,8 +15,6 @@ pub use fsd::FSD;
 pub use partial_curve::*;
 pub use partial_curve_graph_exponential::*;
 pub use partial_curve_graph_linear::*;
-pub use partial_curve_graph_linear::partial_curve_graph_linear as partial_curve_graph;
-pub use partial_curve_graph_linear::make_linear_graph as make_graph;
 
 #[allow(non_upper_case_globals)]
 const sanity_check: bool = true;
