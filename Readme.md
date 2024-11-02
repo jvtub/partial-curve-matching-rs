@@ -30,7 +30,7 @@ Partial curve matching against a curve has two implementations, one with linear 
 
 ## Future work (optimizations)
 Points of interest to work on:
-* [x] Partial curve to graph matching linear implementation <a href="#altefrat" id="altefratref"><sup>4</sup></a>
+* [x] Partial curve to graph matching linear implementation <a href="#altefrat" id="altefratref"><sup>5</sup></a>
 * [ ] Lazily FSD and RSD construction
 * [ ] PCM specific extention to FSD<a href="#maheshwari" id="maheshwariref"><sup>2</sup></a>
 * [ ] Multi-threaded
@@ -45,5 +45,5 @@ The concept of constructing the Free-Space Surface by the paper of Alt, Efrat, R
 <a id="altgodau" href="#altgodauref"><sup>1</sup></a> H. Alt and M. Godau, “Computing the Fréchet Distance between Two Polygonal Curves,” Int. J. Comput. Geom. Appl., vol. 05, no. 01n02, pp. 75–91, Mar. 1995, doi: 10.1142/S0218195995000064.\
 <a id="maheshwari" href="#maheshwariref"><sup>2</sup></a> A. Maheshwari, J.-R. Sack, K. Shahbaz, and H. Zarrabi-Zadeh, “Improved Algorithms for Partial Curve Matching,” Algorithmica, vol. 69, no. 3, pp. 641–657, Jul. 2014, doi: 10.1007/s00453-013-9758-3.\
 <a id="pyfrechet" href="#pyfrechetref"><sup>3</sup></a> https://github.com/compgeomTU/frechetForCurves \
-<a id="bundlepatcher" href="#bundlepatcher"><sup>4</sup></a> https://github.com/jvtubergen/geoalg.
-<a id="altefrat" href="#altefrat"><sup>4</sup></a> H. Alt, A. Efrat, G. Rote, and C. Wenk, “Matching planar maps,” Journal of Algorithms, vol. 49, no. 2, pp. 262–283, Nov. 2003, doi: 10.1016/S0196-6774(03)00085-3. \
+<a id="bundlepatcher" href="#bundlepatcher"><sup>4</sup></a> https://github.com/jvtubergen/geoalg.  \
+<a id="altefrat" href="#altefrat"><sup>5</sup></a> H. Alt, A. Efrat, G. Rote, and C. Wenk, “Matching planar maps,” Journal of Algorithms, vol. 49, no. 2, pp. 262–283, Nov. 2003, doi: 10.1016/S0196-6774(03)00085-3. \
